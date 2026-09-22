@@ -64,7 +64,6 @@ const I18N: Record<Lang, Record<string, string | string[]>> = {
     yourCode:'ລະຫັດແນະນຳຂອງທ່ານ', creditsLabel:'ແຕ້ມສະສົມ', referredLabel:'ຄົນທີ່ແນະນຳສຳເລັດ',
     logoutBtn:'ອອກຈາກລະບົບ', copyCode:'ສຳເນົາລະຫັດ', copiedCode:'ສຳເນົາແລ້ວ!',
     referralHint:'ແບ່ງປັນລະຫັດນີ້ໃຫ້ໝູ່ — ເມື່ອລາວສະໝັກໂດຍໃສ່ລະຫັດຂອງທ່ານ ທ່ານຈະໄດ້ແຕ້ມສະສົມທັນທີ',
-    methodEmail:'ອີເມວ', methodPhone:'ເບີໂທ', phoneLabel:'ເບີໂທລະສັບ', phonePh:'ເຊັ່ນ 020 5551234',
   },
   th: {
     brand:'ก้อยเหล้า', tagline:'ตรวจหวยลาว • สุ่มดูดวง • สถิติ',
@@ -125,7 +124,6 @@ const I18N: Record<Lang, Record<string, string | string[]>> = {
     yourCode:'รหัสแนะนำของคุณ', creditsLabel:'แต้มสะสม', referredLabel:'คนที่แนะนำสำเร็จ',
     logoutBtn:'ออกจากระบบ', copyCode:'คัดลอกรหัส', copiedCode:'คัดลอกแล้ว!',
     referralHint:'แชร์รหัสนี้ให้เพื่อน — เมื่อเพื่อนสมัครโดยใส่รหัสของคุณ คุณจะได้แต้มสะสมทันที',
-    methodEmail:'อีเมล', methodPhone:'เบอร์โทร', phoneLabel:'เบอร์โทรศัพท์', phonePh:'เช่น 020 5551234',
   },
   en: {
     brand:'KoyLao', tagline:'Lao lottery • lucky numbers • stats',
@@ -186,7 +184,6 @@ const I18N: Record<Lang, Record<string, string | string[]>> = {
     yourCode:'Your referral code', creditsLabel:'Credits', referredLabel:'Successful referrals',
     logoutBtn:'Log out', copyCode:'Copy code', copiedCode:'Copied!',
     referralHint:'Share this code with friends — when they sign up with it, you get credits instantly',
-    methodEmail:'Email', methodPhone:'Phone', phoneLabel:'Phone number', phonePh:'e.g. 020 5551234',
   },
 };
 

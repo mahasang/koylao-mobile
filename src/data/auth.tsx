@@ -8,18 +8,13 @@ export interface ReferralStats {
   referred_count: number;
 }
 
-export interface Identifier {
-  email?: string;
-  phone?: string;
-}
-
 interface AuthCtx {
   session: Session | null;
   loading: boolean;
   stats: ReferralStats | null;
   refreshStats: () => Promise<void>;
-  signUp: (id: Identifier, password: string, referredByCode?: string) => Promise<string | null>;
-  signIn: (id: Identifier, password: string) => Promise<string | null>;
+  signUp: (email: string, password: string, referredByCode?: string) => Promise<string | null>;
+  signIn: (email: string, password: string) => Promise<string | null>;
   signOut: () => Promise<void>;
 }
 
@@ -64,23 +59,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     else setStats(null);
   }, [session?.user?.id]);
 
-  const signUp = async (id: Identifier, password: string, referredByCode?: string) => {
+  const signUp = async (email: string, password: string, referredByCode?: string) => {
     if (!isSupabaseConfigured) return 'Supabase ยังไม่ได้ตั้งค่า';
     const { error } = await supabase.auth.signUp({
-      ...(id.phone ? { phone: id.phone } : { email: id.email! }),
+      email,
       password,
       options: {
         data: referredByCode ? { referred_by_code: referredByCode.trim().toUpperCase() } : undefined,
       },
-    } as any);
+    });
     return error ? error.message : null;
   };
 
-  const signIn = async (id: Identifier, password: string) => {
+  const signIn = async (email: string, password: string) => {
     if (!isSupabaseConfigured) return 'Supabase ยังไม่ได้ตั้งค่า';
-    const { error } = await supabase.auth.signInWithPassword(
-      (id.phone ? { phone: id.phone, password } : { email: id.email!, password }) as any
-    );
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
     return error ? error.message : null;
   };
 

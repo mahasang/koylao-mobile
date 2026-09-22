@@ -4,34 +4,29 @@ import * as Clipboard from 'expo-clipboard';
 import { useI18n } from '../data/i18n';
 import { useAuth } from '../data/auth';
 import { isSupabaseConfigured } from '../lib/supabase';
-import { toE164Phone } from '../utils/phone';
 import { C } from '../theme';
 
 export default function AccountModal({ visible, onClose }: { visible: boolean; onClose: () => void }) {
   const { t } = useI18n();
   const { session, stats, signIn, signUp, signOut } = useAuth();
   const [mode, setMode] = useState<'login' | 'signup'>('login');
-  const [method, setMethod] = useState<'email' | 'phone'>('email');
   const [email, setEmail] = useState('');
-  const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
   const [refCode, setRefCode] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
-  const reset = () => { setEmail(''); setPhone(''); setPassword(''); setRefCode(''); setError(null); };
+  const reset = () => { setEmail(''); setPassword(''); setRefCode(''); setError(null); };
 
   const submit = async () => {
     if (!isSupabaseConfigured) { setError(t('authNotConfigured') as string); return; }
-    const idValue = method === 'email' ? email.trim() : phone.trim();
-    if (!idValue || !password) { setError(t('authFillFields') as string); return; }
+    if (!email.trim() || !password) { setError(t('authFillFields') as string); return; }
     setBusy(true);
     setError(null);
-    const id = method === 'email' ? { email: idValue } : { phone: toE164Phone(idValue) };
     const err = mode === 'login'
-      ? await signIn(id, password)
-      : await signUp(id, password, refCode);
+      ? await signIn(email.trim(), password)
+      : await signUp(email.trim(), password, refCode);
     setBusy(false);
     if (err) setError(err);
     else reset();
@@ -89,26 +84,10 @@ export default function AccountModal({ visible, onClose }: { visible: boolean; o
                 </TouchableOpacity>
               </View>
 
-              <View style={s.methodRow}>
-                <TouchableOpacity style={[s.methodBtn, method === 'email' && s.methodBtnOn]} onPress={() => { setMethod('email'); setError(null); }}>
-                  <Text style={[s.methodTxt, method === 'email' && s.methodTxtOn]}>{t('methodEmail') as string}</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={[s.methodBtn, method === 'phone' && s.methodBtnOn]} onPress={() => { setMethod('phone'); setError(null); }}>
-                  <Text style={[s.methodTxt, method === 'phone' && s.methodTxtOn]}>{t('methodPhone') as string}</Text>
-                </TouchableOpacity>
-              </View>
-
-              {method === 'email' ? (
-                <TextInput
-                  style={s.input} placeholder={t('emailLabel') as string} placeholderTextColor={C.muted}
-                  value={email} onChangeText={setEmail} autoCapitalize="none" keyboardType="email-address"
-                />
-              ) : (
-                <TextInput
-                  style={s.input} placeholder={t('phonePh') as string} placeholderTextColor={C.muted}
-                  value={phone} onChangeText={setPhone} keyboardType="phone-pad"
-                />
-              )}
+              <TextInput
+                style={s.input} placeholder={t('emailLabel') as string} placeholderTextColor={C.muted}
+                value={email} onChangeText={setEmail} autoCapitalize="none" keyboardType="email-address"
+              />
               <TextInput
                 style={s.input} placeholder={t('passwordLabel') as string} placeholderTextColor={C.muted}
                 value={password} onChangeText={setPassword} secureTextEntry
@@ -165,12 +144,6 @@ const s = StyleSheet.create({
   tabBtnOn: { backgroundColor: C.accent },
   tabTxt: { color: C.muted, fontWeight: 'bold', fontSize: 13 },
   tabTxtOn: { color: '#fff' },
-  methodRow: { flexDirection: 'row', gap: 8, width: '100%', marginBottom: 10 },
-  methodBtn: { flex: 1, paddingVertical: 8, borderRadius: 8, alignItems: 'center',
-    backgroundColor: C.input, borderWidth: 1, borderColor: C.border },
-  methodBtnOn: { backgroundColor: C.accent + '22', borderColor: C.accent },
-  methodTxt: { color: C.muted, fontSize: 13, fontWeight: 'bold' },
-  methodTxtOn: { color: C.accent },
   input: { width: '100%', backgroundColor: C.input, borderRadius: 10, borderWidth: 1, borderColor: C.border,
     padding: 14, color: C.text, fontSize: 14, marginBottom: 10 },
   fieldHint: { color: C.muted, fontSize: 11, alignSelf: 'flex-start', marginTop: -6, marginBottom: 10 },
