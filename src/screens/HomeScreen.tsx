@@ -1,10 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, TouchableOpacity, ScrollView,
   StyleSheet, Modal, Platform,
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
-import { DRAWS, animalName, animalEmoji } from '../data/lottery';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
+import { getDraws, fetchLatestDraws, animalName, animalEmoji } from '../data/lottery';
+import type { Draw } from '../data/lottery';
 import { nextDrawInfo, fmtDate } from '../utils/lottery';
 import { useI18n } from '../data/i18n';
 import { C } from '../theme';
@@ -14,14 +15,21 @@ export default function HomeScreen() {
   const nav = useNavigation<any>();
   const [nd, setNd] = useState(nextDrawInfo());
   const [aboutVisible, setAboutVisible] = useState(false);
+  const [draws, setDraws] = useState<Draw[]>(getDraws());
 
   useEffect(() => {
     const iv = setInterval(() => setNd(nextDrawInfo()), 60000);
     return () => clearInterval(iv);
   }, []);
 
-  const latest = DRAWS[0];
-  const total = DRAWS.length;
+  useEffect(() => {
+    fetchLatestDraws().then(() => setDraws(getDraws())).catch(() => {});
+  }, []);
+
+  useFocusEffect(useCallback(() => { setDraws(getDraws()); }, []));
+
+  const latest = draws[0];
+  const total = draws.length;
   const quotes = t('quotes') as string[];
   const quoteIdx = Math.floor(Date.now() / 86400000) % quotes.length;
 
@@ -45,10 +53,13 @@ export default function HomeScreen() {
           <Text style={s.resultLabel}>{t('latestResult')} · {fmtDate(latest.date, lang)}</Text>
           <View style={s.digitsRow}>
             {[...latest.num].map((ch, i) => (
-              <Text key={i} style={[s.digit, i >= latest.num.length - 5 && s.digitHl]}>{ch}</Text>
+              <Text key={i} style={[s.digit, s.digitHl]}>{ch}</Text>
             ))}
           </View>
-          <Text style={s.animalBadge}>{animalEmoji(latest.num.slice(-2))} {animalName(latest.num.slice(-2), lang)}</Text>
+          <View style={s.animalRow}>
+            <Text style={s.animalEmoji}>{animalEmoji(latest.num.slice(-2))}</Text>
+            <Text style={s.animalBadge}>{animalName(latest.num.slice(-2), lang)}</Text>
+          </View>
           <View style={s.tailsRow}>
             {[5, 4, 3, 2].map(n => (
               <View key={n} style={s.tail}>
@@ -126,7 +137,9 @@ const s = StyleSheet.create({
     textAlign: 'center', lineHeight: 46, color: C.muted, fontSize: 20,
     fontFamily: 'Courier New' } as any,
   digitHl: { backgroundColor: C.accent + '33', color: C.accent, borderWidth: 1, borderColor: C.accent },
-  animalBadge: { color: C.gold, fontWeight: 'bold', fontSize: 16, marginBottom: 10 },
+  animalRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 },
+  animalEmoji: { fontSize: 34 },
+  animalBadge: { color: C.gold, fontWeight: 'bold', fontSize: 16 },
   tailsRow: { flexDirection: 'row', gap: 16 },
   tail: { alignItems: 'center' },
   tailLabel: { color: C.muted, fontSize: 11 },

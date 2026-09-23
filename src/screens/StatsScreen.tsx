@@ -4,13 +4,11 @@ import {
   StyleSheet, ActivityIndicator, useWindowDimensions,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
-import { DRAWS, animalName, animalEmoji, getDraws, saveExtra, resetExtra } from '../data/lottery';
+import { animalName, animalEmoji, getDraws, fetchLatestDraws, resetExtra } from '../data/lottery';
 import type { Draw } from '../data/lottery';
 import { last2Stats, fmtDate } from '../utils/lottery';
 import { useI18n } from '../data/i18n';
 import { C } from '../theme';
-
-const API_URL = 'https://laodl.com/api/website/laolot/WinPrizeHistory?type=1';
 
 export default function StatsScreen() {
   const { t, lang } = useI18n();
@@ -53,22 +51,8 @@ export default function StatsScreen() {
   const doUpdate = async () => {
     setUpdating(true); setUpdateMsg('');
     try {
-      const res = await fetch(API_URL, { headers: { Accept: 'application/json' } });
-      if (!res.ok) throw new Error('HTTP ' + res.status);
-      const j = await res.json();
-      const rows: any[] = (j && j.resultData) || [];
-      const current = getDraws();
-      const byDate: Record<string, Draw> = {};
-      current.forEach(d => { byDate[d.date] = d; });
-      let added = 0;
-      for (const r of rows) {
-        if (!r.winNumber || !r.roundDate) continue;
-        const date = r.roundDate.slice(0, 10);
-        if (!byDate[date]) { byDate[date] = { date, num: String(r.winNumber) }; added++; }
-        else if (byDate[date].num !== String(r.winNumber)) byDate[date].num = String(r.winNumber);
-      }
-      const next = Object.values(byDate).sort((a, b) => b.date.localeCompare(a.date));
-      saveExtra(next); setDraws(next);
+      const added = await fetchLatestDraws();
+      setDraws(getDraws());
       setUpdateMsg(added
         ? (t('updated') as string).replace('{n}', String(added))
         : t('updatedNone') as string);

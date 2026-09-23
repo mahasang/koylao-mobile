@@ -136,7 +136,7 @@ export default function CheckScreen() {
         <View style={[s.card, { alignItems: 'center' }]}>
           <View style={s.digitsRow}>
             {[...draw.num].map((ch, i) => (
-              <Text key={i} style={[s.digit, i >= draw.num.length - 5 && s.digitHl]}>{ch}</Text>
+              <Text key={i} style={[s.digit, s.digitHl]}>{ch}</Text>
             ))}
           </View>
           <Text style={s.animalBadge}>{animalEmoji(draw.num.slice(-2))} {animalName(draw.num.slice(-2), lang)}</Text>

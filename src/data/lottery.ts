@@ -23,6 +23,30 @@ export function resetExtra() { _extra = []; }
 
 export const DRAWS: Draw[] = SEED;
 
+const UPDATE_API_URL = 'https://laodl.com/api/website/laolot/WinPrizeHistory?type=1';
+
+// Fetches the latest draws from the official source and merges them into
+// the shared in-memory store, so every screen using getDraws() sees them.
+export async function fetchLatestDraws(): Promise<number> {
+  const res = await fetch(UPDATE_API_URL, { headers: { Accept: 'application/json' } });
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  const j = await res.json();
+  const rows: any[] = (j && j.resultData) || [];
+  const current = getDraws();
+  const byDate: Record<string, Draw> = {};
+  current.forEach(d => { byDate[d.date] = d; });
+  let added = 0;
+  for (const r of rows) {
+    if (!r.winNumber || !r.roundDate) continue;
+    const date = r.roundDate.slice(0, 10);
+    if (!byDate[date]) { byDate[date] = { date, num: String(r.winNumber) }; added++; }
+    else if (byDate[date].num !== String(r.winNumber)) byDate[date].num = String(r.winNumber);
+  }
+  const next = Object.values(byDate).sort((a, b) => b.date.localeCompare(a.date));
+  saveExtra(next);
+  return added;
+}
+
 export function animalName(last2: string, lang: Lang = 'lo'): string | null {
   const key = ANIMAL_MAP[last2];
   if (!key) return null;

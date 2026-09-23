@@ -6,7 +6,7 @@ import {
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect } from '@react-navigation/native';
 import { getDraws } from '../data/lottery';
-import { checkNumber, prizeId, payoutFor, fmtDate } from '../utils/lottery';
+import { checkNumber, prizeId, payoutFor, maxStakeFor, fmtDate } from '../utils/lottery';
 import { useI18n } from '../data/i18n';
 import { C } from '../theme';
 
@@ -87,6 +87,12 @@ export default function RiskScreen() {
     const num = betNum.trim();
     const amount = parseInt(betAmt.replace(/\D/g, ''), 10);
     if (!/^\d{1,6}$/.test(num) || !amount || !betDate) { Alert.alert('', t('betBad') as string); return; }
+    const max = maxStakeFor(num.length);
+    if (max && amount > max) {
+      Alert.alert('', (t('betMaxExceeded') as string)
+        .replace('{n}', String(num.length)).replace('{max}', max.toLocaleString()));
+      return;
+    }
     if (bets.some(b => b.status === 'pending' && b.num === num && b.date === betDate)) {
       Alert.alert('', t('betDup') as string); return;
     }
@@ -146,6 +152,13 @@ export default function RiskScreen() {
         <TextInput style={s.input} value={betAmt}
           onChangeText={setBetAmt} keyboardType="numeric"
           placeholder="1,000" placeholderTextColor={C.muted} />
+        {betNum.length > 0 && (
+          <Text style={s.stakeHint}>
+            {(t('maxStakeHint') as string)
+              .replace('{max}', (maxStakeFor(betNum.length) ?? 0).toLocaleString())
+              .replace('{n}', String(betNum.length))}
+          </Text>
+        )}
 
         <TouchableOpacity style={s.primaryBtn} onPress={addBet}>
           <Text style={s.primaryBtnTxt}>➕ {t('addBet')}</Text>
@@ -223,6 +236,7 @@ const s = StyleSheet.create({
   muted: { color: C.muted, fontSize: 12 },
   input: { backgroundColor: C.input, borderRadius: 10, padding: 12, color: C.text,
     fontFamily: 'Courier New', fontSize: 18, letterSpacing: 2, marginBottom: 12 },
+  stakeHint: { color: C.muted, fontSize: 11, marginTop: -8, marginBottom: 12 },
   primaryBtn: { backgroundColor: C.accent, borderRadius: 10, padding: 14, alignItems: 'center', marginTop: 4 },
   primaryBtnTxt: { color: '#fff', fontWeight: 'bold', fontSize: 16 },
   dateChip: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20,

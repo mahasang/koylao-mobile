@@ -23,11 +23,24 @@ export function prizeId(hit: number): string {
   return hit === 6 ? 'full6' : 'd' + hit;
 }
 
-export const PAY_MULT: Record<number, number> = { 5: 40000, 4: 10000, 3: 500, 2: 60, 1: 6 };
+export const PAY_MULT: Record<number, number> = {
+  6: 400000000, 5: 40000000, 4: 5000000, 3: 500000, 2: 60000, 1: 5000,
+};
 
 export function payoutFor(hit: number | null, amount: number): number | null {
-  if (!hit || hit === 6 || !PAY_MULT[hit]) return null;
+  if (!hit || !PAY_MULT[hit]) return null;
   return Math.round((amount / 1000) * PAY_MULT[hit]);
+}
+
+// Max stake allowed per digit-count: fewer digits = easier to win, so the
+// ceiling is higher; a full 6-digit match pays a huge multiplier, so its
+// stake is capped much lower to limit payout exposure.
+export const MAX_STAKE: Record<number, number> = {
+  6: 20000, 5: 1000000, 4: 10000000, 3: 20000000, 2: 50000000, 1: 100000000,
+};
+
+export function maxStakeFor(digitCount: number): number | null {
+  return MAX_STAKE[digitCount] ?? null;
 }
 
 const LOCALE_MAP: Record<Lang, string> = { lo: 'lo-LA', th: 'th-TH', en: 'en-GB' };
