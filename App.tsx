@@ -10,8 +10,10 @@ import HomeScreen    from './src/screens/HomeScreen';
 import CheckScreen   from './src/screens/CheckScreen';
 import LuckyScreen   from './src/screens/LuckyScreen';
 import StatsScreen   from './src/screens/StatsScreen';
-import RiskScreen    from './src/screens/RiskScreen';
-import RiskBuyScreen from './src/screens/RiskBuyScreen';
+import RiskScreen        from './src/screens/RiskScreen';
+import RiskBuyScreen     from './src/screens/RiskBuyScreen';
+import RiskResultsScreen from './src/screens/RiskResultsScreen';
+import RiskHistoryScreen from './src/screens/RiskHistoryScreen';
 import AppHeader from './src/components/AppHeader';
 import { C } from './src/theme';
 
@@ -24,6 +26,8 @@ function RiskStack() {
     <RiskStackNav.Navigator>
       <RiskStackNav.Screen name="RiskHome" component={RiskScreen} options={{ headerShown: false }} />
       <RiskStackNav.Screen name="RiskBuy" component={RiskBuyScreen} options={{ title: t('goBuyBtn') as string }} />
+      <RiskStackNav.Screen name="RiskResults" component={RiskResultsScreen} options={{ title: t('resultsHistoryTitle') as string }} />
+      <RiskStackNav.Screen name="RiskHistory" component={RiskHistoryScreen} options={{ title: t('purchaseHistory') as string }} />
     </RiskStackNav.Navigator>
   );
 }

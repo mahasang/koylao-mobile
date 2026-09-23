@@ -83,6 +83,17 @@ export default function RiskBuyScreen() {
 
   const removeFromCart = (num: string) => setCart(prev => prev.filter(c => c.num !== num));
 
+  const bumpCartAmount = (num: string, delta: number) => {
+    setCart(prev => prev.map(c => {
+      if (c.num !== num) return c;
+      const max = maxStakeFor(c.num.length);
+      let next = c.amount + delta;
+      if (next < 0) next = 0;
+      if (max && next > max) next = max;
+      return { ...c, amount: next };
+    }));
+  };
+
   const confirmRandom = () => {
     Keyboard.dismiss();
     const qty = Math.max(1, Math.min(1000, parseInt(rQty.replace(/\D/g, ''), 10) || 0));
@@ -196,7 +207,15 @@ export default function RiskBuyScreen() {
               {cart.map(c => (
                 <View key={c.num} style={s.cartRow}>
                   <Text style={s.cartNum}>{c.num}</Text>
-                  <Text style={s.cartAmt}>{c.amount.toLocaleString()} ₭</Text>
+                  <View style={s.cartAmtStepper}>
+                    <TouchableOpacity style={s.cartStepBtn} onPress={() => bumpCartAmount(c.num, -AMOUNT_STEP)}>
+                      <Text style={s.cartStepBtnTxt}>−</Text>
+                    </TouchableOpacity>
+                    <Text style={s.cartAmt}>{c.amount.toLocaleString()}</Text>
+                    <TouchableOpacity style={s.cartStepBtn} onPress={() => bumpCartAmount(c.num, AMOUNT_STEP)}>
+                      <Text style={s.cartStepBtnTxt}>+</Text>
+                    </TouchableOpacity>
+                  </View>
                   <TouchableOpacity onPress={() => removeFromCart(c.num)}>
                     <Text style={{ fontSize: 18 }}>🗑</Text>
                   </TouchableOpacity>
@@ -361,7 +380,11 @@ const s = StyleSheet.create({
   cartRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 6,
     borderBottomWidth: 1, borderBottomColor: C.border, gap: 8 },
   cartNum: { flex: 1, color: C.text, fontFamily: 'Courier New', fontSize: 16, fontWeight: 'bold' },
-  cartAmt: { color: C.muted, fontSize: 13 },
+  cartAmt: { color: C.muted, fontSize: 13, minWidth: 56, textAlign: 'center' },
+  cartAmtStepper: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  cartStepBtn: { width: 26, height: 26, borderRadius: 6, backgroundColor: C.card,
+    borderWidth: 1, borderColor: C.border, alignItems: 'center', justifyContent: 'center' },
+  cartStepBtnTxt: { color: C.accent, fontSize: 15, fontWeight: 'bold' },
   confirmPurchaseBtn: { backgroundColor: '#2e9e4f', borderRadius: 10, padding: 14, alignItems: 'center' },
   modalOverlay: { flex: 1, backgroundColor: '#0006', justifyContent: 'flex-end' },
   modalCard: { backgroundColor: C.card, borderTopLeftRadius: 20, borderTopRightRadius: 20,
