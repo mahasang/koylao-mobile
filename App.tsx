@@ -3,17 +3,30 @@ import { StatusBar, Text } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { I18nProvider, useI18n } from './src/data/i18n';
 import { AuthProvider } from './src/data/auth';
-import HomeScreen  from './src/screens/HomeScreen';
-import CheckScreen from './src/screens/CheckScreen';
-import LuckyScreen from './src/screens/LuckyScreen';
-import StatsScreen from './src/screens/StatsScreen';
-import RiskScreen  from './src/screens/RiskScreen';
+import HomeScreen    from './src/screens/HomeScreen';
+import CheckScreen   from './src/screens/CheckScreen';
+import LuckyScreen   from './src/screens/LuckyScreen';
+import StatsScreen   from './src/screens/StatsScreen';
+import RiskScreen    from './src/screens/RiskScreen';
+import RiskBuyScreen from './src/screens/RiskBuyScreen';
 import AppHeader from './src/components/AppHeader';
 import { C } from './src/theme';
 
 const Tab = createBottomTabNavigator();
+const RiskStackNav = createNativeStackNavigator();
+
+function RiskStack() {
+  const { t } = useI18n();
+  return (
+    <RiskStackNav.Navigator>
+      <RiskStackNav.Screen name="RiskHome" component={RiskScreen} options={{ headerShown: false }} />
+      <RiskStackNav.Screen name="RiskBuy" component={RiskBuyScreen} options={{ title: t('goBuyBtn') as string }} />
+    </RiskStackNav.Navigator>
+  );
+}
 
 const TAB_ICONS: Record<string, string> = {
   Home:  '🏠',
@@ -46,7 +59,7 @@ function Tabs() {
     >
       <Tab.Screen name="Home"  component={HomeScreen}  options={{ title: t('tabHome')  as string }} />
       <Tab.Screen name="Check" component={CheckScreen} options={{ title: t('tabCheck') as string }} />
-      <Tab.Screen name="Risk"  component={RiskScreen}  options={{ title: t('tabRisk')  as string }} />
+      <Tab.Screen name="Risk"  component={RiskStack}   options={{ title: t('tabRisk')  as string }} />
       <Tab.Screen name="Lucky" component={LuckyScreen} options={{ title: t('tabLucky') as string }} />
       <Tab.Screen name="Stats" component={StatsScreen} options={{ title: t('tabStats') as string }} />
     </Tab.Navigator>
