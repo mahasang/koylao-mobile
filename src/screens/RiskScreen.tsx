@@ -6,17 +6,20 @@ import {
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect } from '@react-navigation/native';
 import { getDraws } from '../data/lottery';
-import { checkNumber, prizeId, payoutFor, maxStakeFor, fmtDate } from '../utils/lottery';
+import { checkNumber, payoutFor, maxStakeFor, fmtDate } from '../utils/lottery';
 import { useI18n } from '../data/i18n';
 import { C } from '../theme';
 
-const BETS_KEY = 'koylao_bets_v1';
+const PURCHASES_KEY = 'koylao_purchases_v1';
+const LINES_SHOWN_STEP = 30;
 
-type BetStatus = 'pending' | 'win' | 'lose';
-interface Bet {
-  id: string; num: string; amount: number; date: string;
-  status: BetStatus; hit?: number | null; pay?: number;
+type LineStatus = 'pending' | 'win' | 'lose';
+interface PurchaseLine { num: string; amount: number; status: LineStatus; hit?: number | null; pay?: number; }
+interface Purchase {
+  id: string; billNo: string; refNo: string; channel: string;
+  drawDate: string; createdAt: string; lines: PurchaseLine[];
 }
+interface CartItem { num: string; amount: number; }
 
 function localDateStr(d: Date) {
   const p = (n: number) => String(n).padStart(2, '0');
@@ -46,12 +49,34 @@ function getWorkdays(count = 7): string[] {
   return result;
 }
 
+function genBillNo(d: Date): string {
+  const p = (n: number) => String(n).padStart(2, '0');
+  const datePart = `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}`;
+  const rand = Math.random().toString(36).slice(2, 8).toUpperCase();
+  return `${datePart}-${rand}`;
+}
+
+function genRefNo(): string {
+  return String(Date.now()) + String(Math.floor(Math.random() * 900) + 100);
+}
+
+function fmtDateTime(iso: string, lang: 'lo' | 'th' | 'en'): string {
+  const d = new Date(iso);
+  const datePart = fmtDate(localDateStr(d), lang);
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${datePart} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+}
+
 export default function RiskScreen() {
   const { t, lang } = useI18n();
-  const [bets, setBets] = useState<Bet[]>([]);
+  const [purchases, setPurchases] = useState<Purchase[]>([]);
+  const [cart, setCart] = useState<CartItem[]>([]);
   const [betNum, setBetNum] = useState('');
   const [betAmt, setBetAmt] = useState('');
   const [betDate, setBetDate] = useState(localDateStr(nextWorkday()));
+  const [receipt, setReceipt] = useState<Purchase | null>(null);
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const [shownCount, setShownCount] = useState<Record<string, number>>({});
   const workdays = getWorkdays(7);
 
   const [randomOpen, setRandomOpen] = useState(false);
@@ -69,58 +94,76 @@ export default function RiskScreen() {
     setRFixed(prev => prev.map((p, idx) => (idx === i ? digit : p)));
   };
 
-  const loadBets = async () => {
+  const loadPurchases = async () => {
     try {
-      const v = await AsyncStorage.getItem(BETS_KEY);
-      setBets(v ? JSON.parse(v) : []);
-    } catch { setBets([]); }
+      const v = await AsyncStorage.getItem(PURCHASES_KEY);
+      setPurchases(v ? JSON.parse(v) : []);
+    } catch { setPurchases([]); }
   };
 
-  const saveBets = async (next: Bet[]) => {
-    setBets(next);
-    await AsyncStorage.setItem(BETS_KEY, JSON.stringify(next));
+  const savePurchases = async (next: Purchase[]) => {
+    setPurchases(next);
+    await AsyncStorage.setItem(PURCHASES_KEY, JSON.stringify(next));
   };
 
-  useFocusEffect(useCallback(() => { loadBets(); }, []));
+  useFocusEffect(useCallback(() => { loadPurchases(); }, []));
 
-  const evalBets = async (current: Bet[]): Promise<Bet[]> => {
+  const evalPurchases = async (current: Purchase[]) => {
     const draws = getDraws();
-    const next = current.map(b => {
-      if (b.status !== 'pending') return b;
-      const draw = draws.find(d => d.date === b.date);
-      if (!draw) return b;
-      const r = checkNumber(b.num, draw.num);
-      const hit = r.hit;
-      return { ...b, status: (hit ? 'win' : 'lose') as BetStatus, hit, pay: hit ? payoutFor(hit, b.amount) ?? 0 : 0 };
+    let winCount = 0, loseCount = 0, winAmt = 0;
+    const next = current.map(p => {
+      const draw = draws.find(d => d.date === p.drawDate);
+      if (!draw) return p;
+      const lines = p.lines.map(l => {
+        if (l.status !== 'pending') return l;
+        const r = checkNumber(l.num, draw.num);
+        if (r.hit) {
+          const pay = payoutFor(r.hit, l.amount) ?? 0;
+          winCount++; winAmt += pay;
+          return { ...l, status: 'win' as LineStatus, hit: r.hit, pay };
+        }
+        loseCount++;
+        return { ...l, status: 'lose' as LineStatus, hit: null, pay: 0 };
+      });
+      return { ...p, lines };
     });
-    await saveBets(next);
-    return next;
+    await savePurchases(next);
+    return { next, winCount, loseCount, winAmt };
   };
 
-  const addBet = async () => {
+  const changeBetDate = (d: string) => {
+    if (d === betDate) return;
+    if (cart.length > 0) {
+      Alert.alert('', t('dateChangeClears') as string, [
+        { text: t('cancelBtn') as string, style: 'cancel' },
+        { text: t('confirmBtn') as string, onPress: () => { setCart([]); setBetDate(d); } },
+      ]);
+      return;
+    }
+    setBetDate(d);
+  };
+
+  const addToCart = () => {
     Keyboard.dismiss();
     const num = betNum.trim();
     const amount = parseInt(betAmt.replace(/\D/g, ''), 10);
-    if (!/^\d{1,6}$/.test(num) || !amount || !betDate) { Alert.alert('', t('betBad') as string); return; }
+    if (!/^\d{1,6}$/.test(num) || !amount) { Alert.alert('', t('betBad') as string); return; }
     const max = maxStakeFor(num.length);
     if (max && amount > max) {
       Alert.alert('', (t('betMaxExceeded') as string)
         .replace('{n}', String(num.length)).replace('{max}', max.toLocaleString()));
       return;
     }
-    if (bets.some(b => b.status === 'pending' && b.num === num && b.date === betDate)) {
-      Alert.alert('', t('betDup') as string); return;
-    }
-    const newBet: Bet = {
-      id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-      num, amount, date: betDate, status: 'pending',
-    };
-    const next = await evalBets([newBet, ...bets]);
-    Alert.alert('', t('betAdded') as string);
+    const dup = cart.some(c => c.num === num) ||
+      purchases.some(p => p.drawDate === betDate && p.lines.some(l => l.num === num));
+    if (dup) { Alert.alert('', t('betDup') as string); return; }
+    setCart(prev => [{ num, amount }, ...prev]);
     setBetNum(''); setBetAmt('');
   };
 
-  const confirmRandom = async () => {
+  const removeFromCart = (num: string) => setCart(prev => prev.filter(c => c.num !== num));
+
+  const confirmRandom = () => {
     Keyboard.dismiss();
     const qty = Math.max(1, Math.min(1000, parseInt(rQty.replace(/\D/g, ''), 10) || 0));
     const amount = parseInt(rAmt.replace(/\D/g, ''), 10);
@@ -135,7 +178,10 @@ export default function RiskScreen() {
     const wildcards = rFixed.filter(f => !f).length;
     const maxPossible = Math.pow(10, wildcards);
     const wanted = Math.min(qty, maxPossible);
-    const existing = new Set(bets.filter(b => b.status === 'pending' && b.date === betDate).map(b => b.num));
+    const existing = new Set([
+      ...cart.map(c => c.num),
+      ...purchases.filter(p => p.drawDate === betDate).flatMap(p => p.lines.map(l => l.num)),
+    ]);
     const generated = new Set<string>();
     let attempts = 0;
     while (generated.size < wanted && attempts < wanted * 30 + 500) {
@@ -146,33 +192,58 @@ export default function RiskScreen() {
 
     if (generated.size === 0) { Alert.alert('', t('randomBad') as string); return; }
 
-    const newBets: Bet[] = [...generated].map(num => ({
-      id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-      num, amount, date: betDate, status: 'pending' as BetStatus,
-    }));
-    await evalBets([...newBets, ...bets]);
-    Alert.alert('', (t('randomAdded') as string).replace('{n}', String(newBets.length)));
+    setCart(prev => [...[...generated].map(num => ({ num, amount })), ...prev]);
+    Alert.alert('', (t('randomAdded') as string).replace('{n}', String(generated.size)));
     setRandomOpen(false);
   };
 
-  const checkNow = async () => {
-    const prev = [...bets];
-    const next = await evalBets(prev);
-    const settled = next.filter((b, i) => b.status !== 'pending' && prev[i]?.status === 'pending');
-    if (settled.length === 0) { Alert.alert('', t('noResultYet') as string); return; }
-    settled.forEach(b => {
-      const msg = b.status === 'win'
-        ? (t('evaluatedWin') as string).replace('{n}', b.num).replace('{p}', t('p_' + prizeId(b.hit ?? 0)) as string)
-        : (t('evaluatedLose') as string).replace('{n}', b.num);
-      Alert.alert('', msg);
-    });
+  const confirmPurchase = async () => {
+    if (cart.length === 0) { Alert.alert('', t('cartEmptyWarn') as string); return; }
+    const now = new Date();
+    const purchase: Purchase = {
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      billNo: genBillNo(now),
+      refNo: genRefNo(),
+      channel: t('demoChannel') as string,
+      drawDate: betDate,
+      createdAt: now.toISOString(),
+      lines: cart.map(c => ({ ...c, status: 'pending' as LineStatus })),
+    };
+    const { next } = await evalPurchases([purchase, ...purchases]);
+    setCart([]);
+    const settled = next.find(p => p.id === purchase.id) ?? purchase;
+    setReceipt(settled);
   };
 
-  const removeBet = async (id: string) => saveBets(bets.filter(b => b.id !== id));
+  const checkNow = async () => {
+    const { winCount, loseCount, winAmt } = await evalPurchases(purchases);
+    if (winCount + loseCount === 0) { Alert.alert('', t('noResultYet') as string); return; }
+    Alert.alert('', (t('checkSummary') as string)
+      .replace('{win}', String(winCount)).replace('{amt}', winAmt.toLocaleString()).replace('{lose}', String(loseCount)));
+  };
 
-  const pend = bets.filter(b => b.status === 'pending');
-  const done = bets.filter(b => b.status !== 'pending').sort((a, b) => b.date.localeCompare(a.date)).slice(0, 30);
-  const total = pend.reduce((sum, b) => sum + b.amount, 0);
+  const removeLine = async (purchaseId: string, num: string) => {
+    const next = purchases
+      .map(p => p.id === purchaseId ? { ...p, lines: p.lines.filter(l => l.num !== num) } : p)
+      .filter(p => p.lines.length > 0);
+    await savePurchases(next);
+  };
+
+  const removePurchase = async (id: string) => savePurchases(purchases.filter(p => p.id !== id));
+
+  const toggleExpand = (id: string) => {
+    setExpanded(prev => ({ ...prev, [id]: !prev[id] }));
+    setShownCount(prev => ({ ...prev, [id]: prev[id] ?? LINES_SHOWN_STEP }));
+  };
+
+  const showMoreLines = (id: string) => {
+    setShownCount(prev => ({ ...prev, [id]: (prev[id] ?? LINES_SHOWN_STEP) + LINES_SHOWN_STEP }));
+  };
+
+  const lineIcon = (status: LineStatus) => status === 'pending' ? '⏳' : status === 'win' ? '✅' : '❌';
+
+  const cartTotal = cart.reduce((sum, c) => sum + c.amount, 0);
+  const groupedDates = [...new Set(purchases.map(p => p.drawDate))].sort((a, b) => b.localeCompare(a));
 
   return (
     <ScrollView style={s.scroll} keyboardShouldPersistTaps="handled" contentContainerStyle={s.content}>
@@ -184,7 +255,7 @@ export default function RiskScreen() {
         <Text style={s.label}>{t('betDraw')}</Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
           {workdays.map(d => (
-            <TouchableOpacity key={d} style={[s.dateChip, betDate === d && s.dateChipOn]} onPress={() => setBetDate(d)}>
+            <TouchableOpacity key={d} style={[s.dateChip, betDate === d && s.dateChipOn]} onPress={() => changeBetDate(d)}>
               <Text style={[s.dateChipTxt, betDate === d && s.dateChipOnTxt]}>
                 {fmtDate(d, lang, { weekday: 'short', day: 'numeric', month: 'short' })}
               </Text>
@@ -211,13 +282,35 @@ export default function RiskScreen() {
         )}
 
         <View style={s.btnRow}>
-          <TouchableOpacity style={[s.primaryBtn, { flex: 1 }]} onPress={addBet}>
+          <TouchableOpacity style={[s.primaryBtn, { flex: 1 }]} onPress={addToCart}>
             <Text style={s.primaryBtnTxt}>➕ {t('addBet')}</Text>
           </TouchableOpacity>
           <TouchableOpacity style={s.randomBtn} onPress={() => setRandomOpen(true)}>
             <Text style={s.randomBtnTxt}>🎲 {t('riskRandomBtn')}</Text>
           </TouchableOpacity>
         </View>
+
+        {/* cart */}
+        {cart.length > 0 && (
+          <View style={s.cartBox}>
+            <Text style={s.cartTitle}>🛒 {t('cartTitle')} <Text style={{ color: C.accent }}>{cart.length}</Text></Text>
+            {cart.map(c => (
+              <View key={c.num} style={s.cartRow}>
+                <Text style={s.cartNum}>{c.num}</Text>
+                <Text style={s.cartAmt}>{c.amount.toLocaleString()} ₭</Text>
+                <TouchableOpacity onPress={() => removeFromCart(c.num)}>
+                  <Text style={{ fontSize: 18 }}>🗑</Text>
+                </TouchableOpacity>
+              </View>
+            ))}
+            <Text style={[s.muted, { textAlign: 'right', marginVertical: 8 }]}>
+              {(t('stakeTotal') as string).replace('{v}', cartTotal.toLocaleString())}
+            </Text>
+            <TouchableOpacity style={s.confirmPurchaseBtn} onPress={confirmPurchase}>
+              <Text style={s.primaryBtnTxt}>✅ {t('confirmPurchaseBtn')}</Text>
+            </TouchableOpacity>
+          </View>
+        )}
       </View>
 
       {/* random generator modal */}
@@ -276,61 +369,134 @@ export default function RiskScreen() {
         </View>
       </Modal>
 
-      {/* pending */}
+      {/* receipt modal */}
+      <Modal visible={!!receipt} animationType="fade" transparent onRequestClose={() => setReceipt(null)}>
+        <View style={s.modalOverlay}>
+          <ScrollView style={s.receiptScroll} contentContainerStyle={{ paddingBottom: 24 }}>
+            <View style={s.receiptCard}>
+              <Text style={s.receiptCheck}>✅</Text>
+              <Text style={s.receiptTitle}>{t('purchaseConfirmed') as string}</Text>
+              {receipt && <Text style={s.receiptTime}>{fmtDateTime(receipt.createdAt, lang)}</Text>}
+              <View style={s.receiptDivider} />
+              {receipt && (
+                <>
+                  <View style={s.receiptRow}>
+                    <Text style={s.receiptLabel}>{t('drawRoundLabel') as string}</Text>
+                    <Text style={s.receiptValue}>{fmtDate(receipt.drawDate, lang)}</Text>
+                  </View>
+                  <View style={s.receiptTableHead}>
+                    <Text style={[s.receiptTh, { flex: 1.4 }]}>{t('betNum') as string}</Text>
+                    <Text style={s.receiptTh}>{t('betAmount') as string}</Text>
+                  </View>
+                  {receipt.lines.slice(0, 50).map(l => (
+                    <View key={l.num} style={s.receiptTr}>
+                      <Text style={[s.receiptTd, { flex: 1.4, fontFamily: 'Courier New' }]}>{l.num}</Text>
+                      <Text style={s.receiptTd}>{l.amount.toLocaleString()} ₭</Text>
+                    </View>
+                  ))}
+                  {receipt.lines.length > 50 && (
+                    <Text style={[s.muted, { textAlign: 'center', marginTop: 6 }]}>
+                      {(t('moreNumbers') as string).replace('{n}', String(receipt.lines.length - 50))}
+                    </Text>
+                  )}
+                  <View style={s.receiptDivider} />
+                  <View style={s.receiptRow}>
+                    <Text style={s.receiptTotalLabel}>{t('totalCount') as string}</Text>
+                    <Text style={s.receiptTotalValue}>{receipt.lines.length} {t('numbersUnit') as string}</Text>
+                  </View>
+                  <View style={s.receiptRow}>
+                    <Text style={s.receiptTotalLabel}>{t('totalAmountLabel') as string}</Text>
+                    <Text style={s.receiptTotalValue}>
+                      {receipt.lines.reduce((sum, l) => sum + l.amount, 0).toLocaleString()} ₭
+                    </Text>
+                  </View>
+                  <View style={s.receiptDivider} />
+                  <Text style={s.receiptMeta}>{t('billNo') as string}: {receipt.billNo}</Text>
+                  <Text style={s.receiptMeta}>{t('refNo') as string}: {receipt.refNo}</Text>
+                  <Text style={s.receiptMeta}>{t('channel') as string}: {receipt.channel}</Text>
+                </>
+              )}
+              <Text style={s.receiptDemo}>ℹ️ {t('demoNote') as string}</Text>
+              <TouchableOpacity style={s.primaryBtn} onPress={() => setReceipt(null)}>
+                <Text style={s.primaryBtnTxt}>{t('close') as string}</Text>
+              </TouchableOpacity>
+            </View>
+          </ScrollView>
+        </View>
+      </Modal>
+
+      {/* purchase history */}
       <View style={s.card}>
         <View style={s.rowBetween}>
-          <Text style={s.cardTitle}>📌 {t('pendingBets')} <Text style={{ color: C.accent }}>{pend.length}</Text></Text>
-          {pend.length > 0 && (
+          <Text style={s.cardTitle}>📜 {t('purchaseHistory') as string}</Text>
+          {purchases.length > 0 && (
             <TouchableOpacity onPress={checkNow}>
               <Text style={s.link}>{t('checkNow')}</Text>
             </TouchableOpacity>
           )}
         </View>
-        {pend.length === 0
-          ? <Text style={s.empty}>{t('emptyBets') as string}</Text>
-          : pend.map(b => (
-            <View key={b.id} style={s.betItem}>
-              <View style={{ flex: 1 }}>
-                <Text style={s.betNum}>{b.num}</Text>
-                <Text style={s.muted}>{fmtDate(b.date, lang, { day: 'numeric', month: 'short' })} · {b.amount.toLocaleString()} ₭</Text>
-              </View>
-              <TouchableOpacity onPress={() => removeBet(b.id)}>
-                <Text style={{ fontSize: 20 }}>🗑</Text>
-              </TouchableOpacity>
+        {purchases.length === 0
+          ? <Text style={s.empty}>{t('emptyPurchases') as string}</Text>
+          : groupedDates.map(date => (
+            <View key={date} style={s.dateGroup}>
+              <Text style={s.dateGroupTitle}>{t('drawRoundLabel') as string}: {fmtDate(date, lang)}</Text>
+              {purchases
+                .filter(p => p.drawDate === date)
+                .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+                .map(p => {
+                  const isOpen = !!expanded[p.id];
+                  const shown = shownCount[p.id] ?? LINES_SHOWN_STEP;
+                  const totalAmt = p.lines.reduce((sum, l) => sum + l.amount, 0);
+                  const winLines = p.lines.filter(l => l.status === 'win');
+                  return (
+                    <View key={p.id} style={s.purchaseBox}>
+                      <View style={s.rowBetween}>
+                        <Text style={s.muted}>{fmtDateTime(p.createdAt, lang)}</Text>
+                        <TouchableOpacity onPress={() => removePurchase(p.id)}>
+                          <Text style={{ fontSize: 18 }}>🗑</Text>
+                        </TouchableOpacity>
+                      </View>
+                      <Text style={s.purchaseSub}>{t('billNo') as string}: {p.billNo}</Text>
+                      <Text style={s.purchaseSub}>{t('channel') as string}: {p.channel}</Text>
+                      <View style={s.rowBetween}>
+                        <Text style={s.purchaseCount}>
+                          {p.lines.length} {t('numbersUnit') as string}
+                          {winLines.length > 0 ? ` · ✅ ${winLines.length}` : ''}
+                        </Text>
+                        <Text style={s.purchaseTotal}>{totalAmt.toLocaleString()} ₭</Text>
+                      </View>
+                      <TouchableOpacity onPress={() => toggleExpand(p.id)}>
+                        <Text style={s.link}>
+                          {isOpen ? t('hideNums') as string : (t('viewAllNums') as string).replace('{n}', String(p.lines.length))}
+                        </Text>
+                      </TouchableOpacity>
+                      {isOpen && (
+                        <View style={{ marginTop: 8 }}>
+                          {p.lines.slice(0, shown).map(l => (
+                            <View key={l.num} style={s.lineRow}>
+                              <Text style={s.lineIcon}>{lineIcon(l.status)}</Text>
+                              <Text style={s.lineNum}>{l.num}</Text>
+                              <Text style={s.lineAmt}>
+                                {l.status === 'win' ? `+${(l.pay ?? 0).toLocaleString()}` : l.amount.toLocaleString()} ₭
+                              </Text>
+                              <TouchableOpacity onPress={() => removeLine(p.id, l.num)}>
+                                <Text style={{ fontSize: 16 }}>🗑</Text>
+                              </TouchableOpacity>
+                            </View>
+                          ))}
+                          {shown < p.lines.length && (
+                            <TouchableOpacity onPress={() => showMoreLines(p.id)}>
+                              <Text style={[s.link, { textAlign: 'center', marginTop: 6 }]}>{t('showMore') as string}</Text>
+                            </TouchableOpacity>
+                          )}
+                        </View>
+                      )}
+                    </View>
+                  );
+                })}
             </View>
           ))}
-        {pend.length > 0 && (
-          <Text style={[s.muted, { textAlign: 'right', marginTop: 8 }]}>
-            {(t('stakeTotal') as string).replace('{v}', total.toLocaleString())}
-          </Text>
-        )}
       </View>
-
-      {/* settled */}
-      {done.length > 0 && (
-        <View style={s.card}>
-          <Text style={s.cardTitle}>📜 {t('doneBets')}</Text>
-          {done.map(b => {
-            const win = b.status === 'win';
-            return (
-              <View key={b.id} style={s.betItem}>
-                <View style={{ flex: 1 }}>
-                  <Text style={s.betNum}>{b.num}</Text>
-                  <Text style={[s.betResult, win ? s.winTxt : s.loseTxt]}>
-                    {win
-                      ? `✓ ${t('p_' + prizeId(b.hit ?? 0))} · ${(t('estPay') as string).replace('{v}', (b.pay ?? 0).toLocaleString())}`
-                      : `✕ ${t('savedLose')}`}
-                  </Text>
-                  <Text style={s.muted}>{fmtDate(b.date, lang, { day: 'numeric', month: 'short' })}</Text>
-                </View>
-                <TouchableOpacity onPress={() => removeBet(b.id)}>
-                  <Text style={{ fontSize: 20 }}>🗑</Text>
-                </TouchableOpacity>
-              </View>
-            );
-          })}
-        </View>
-      )}
 
       <Text style={s.disc}>ℹ️ {t('autoNote') as string}</Text>
     </ScrollView>
@@ -355,6 +521,13 @@ const s = StyleSheet.create({
     borderRadius: 10, paddingHorizontal: 16, paddingVertical: 14, alignItems: 'center',
     justifyContent: 'center', marginTop: 4 },
   randomBtnTxt: { color: C.violet, fontWeight: 'bold', fontSize: 15 },
+  cartBox: { backgroundColor: C.input, borderRadius: 12, padding: 12, marginTop: 14 },
+  cartTitle: { color: C.text, fontWeight: 'bold', fontSize: 14, marginBottom: 6 },
+  cartRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 6,
+    borderBottomWidth: 1, borderBottomColor: C.border, gap: 8 },
+  cartNum: { flex: 1, color: C.text, fontFamily: 'Courier New', fontSize: 16, fontWeight: 'bold' },
+  cartAmt: { color: C.muted, fontSize: 13 },
+  confirmPurchaseBtn: { backgroundColor: '#2e9e4f', borderRadius: 10, padding: 14, alignItems: 'center' },
   modalOverlay: { flex: 1, backgroundColor: '#0006', justifyContent: 'flex-end' },
   modalCard: { backgroundColor: C.card, borderTopLeftRadius: 20, borderTopRightRadius: 20,
     padding: 24, paddingBottom: Platform.OS === 'ios' ? 40 : 24 },
@@ -381,11 +554,33 @@ const s = StyleSheet.create({
   rowBetween: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
   link: { color: C.accent, fontWeight: 'bold', fontSize: 14 },
   empty: { color: C.muted, fontSize: 13, textAlign: 'center', paddingVertical: 8 },
-  betItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 10,
-    borderBottomWidth: 1, borderBottomColor: C.border },
-  betNum: { color: C.text, fontFamily: 'Courier New', fontSize: 20, letterSpacing: 2, fontWeight: 'bold' },
-  betResult: { fontSize: 13, fontWeight: 'bold', marginTop: 2 },
-  winTxt: { color: '#4caf50' },
-  loseTxt: { color: '#e57373' },
+  dateGroup: { marginBottom: 10 },
+  dateGroupTitle: { color: C.muted, fontSize: 12, fontWeight: 'bold', marginBottom: 6, textTransform: 'uppercase' },
+  purchaseBox: { backgroundColor: C.input, borderRadius: 12, padding: 12, marginBottom: 10 },
+  purchaseSub: { color: C.muted, fontSize: 11, marginBottom: 2 },
+  purchaseCount: { color: C.text, fontSize: 13, fontWeight: 'bold', marginTop: 4 },
+  purchaseTotal: { color: C.gold, fontWeight: 'bold', fontSize: 14, marginTop: 4 },
+  lineRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 6,
+    borderBottomWidth: 1, borderBottomColor: C.border, gap: 8 },
+  lineIcon: { fontSize: 14 },
+  lineNum: { flex: 1, color: C.text, fontFamily: 'Courier New', fontSize: 15, fontWeight: 'bold' },
+  lineAmt: { color: C.muted, fontSize: 12 },
   disc: { color: C.muted, fontSize: 11, textAlign: 'center', lineHeight: 16 },
+  receiptScroll: { maxHeight: '90%' },
+  receiptCard: { backgroundColor: C.card, borderRadius: 20, padding: 24, margin: 16, alignItems: 'center' },
+  receiptCheck: { fontSize: 46, marginBottom: 4 },
+  receiptTitle: { color: C.text, fontSize: 18, fontWeight: 'bold' },
+  receiptTime: { color: C.muted, fontSize: 12, marginTop: 4, marginBottom: 12 },
+  receiptDivider: { height: 1, backgroundColor: C.border, width: '100%', marginVertical: 10 },
+  receiptRow: { flexDirection: 'row', justifyContent: 'space-between', width: '100%', marginBottom: 4 },
+  receiptLabel: { color: C.muted, fontSize: 13 },
+  receiptValue: { color: C.text, fontSize: 13, fontWeight: 'bold' },
+  receiptTableHead: { flexDirection: 'row', width: '100%', borderBottomWidth: 1, borderBottomColor: C.border, paddingBottom: 6, marginBottom: 4 },
+  receiptTh: { flex: 1, color: C.muted, fontSize: 12, fontWeight: 'bold' },
+  receiptTr: { flexDirection: 'row', width: '100%', paddingVertical: 3 },
+  receiptTd: { flex: 1, color: C.text, fontSize: 13 },
+  receiptTotalLabel: { color: C.text, fontSize: 14, fontWeight: 'bold' },
+  receiptTotalValue: { color: C.gold, fontSize: 14, fontWeight: 'bold' },
+  receiptMeta: { color: C.muted, fontSize: 11, alignSelf: 'flex-start' },
+  receiptDemo: { color: C.muted, fontSize: 11, textAlign: 'center', marginTop: 14, marginBottom: 16, lineHeight: 16 },
 });
