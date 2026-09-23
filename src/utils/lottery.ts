@@ -91,5 +91,11 @@ export function nextDrawInfo() {
   else if (now >= target) add = 1;
   target.setDate(target.getDate() + add);
   const ms = target.getTime() - now.getTime();
-  return { date: target, days: Math.floor(ms / 86400000), hours: Math.floor((ms % 86400000) / 3600000) };
+  return {
+    date: target,
+    days: Math.floor(ms / 86400000),
+    hours: Math.floor((ms % 86400000) / 3600000),
+    minutes: Math.floor((ms % 3600000) / 60000),
+    seconds: Math.floor((ms % 60000) / 1000),
+  };
 }

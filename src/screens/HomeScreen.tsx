@@ -18,7 +18,7 @@ export default function HomeScreen() {
   const [draws, setDraws] = useState<Draw[]>(getDraws());
 
   useEffect(() => {
-    const iv = setInterval(() => setNd(nextDrawInfo()), 60000);
+    const iv = setInterval(() => setNd(nextDrawInfo()), 1000);
     return () => clearInterval(iv);
   }, []);
 
@@ -41,8 +41,12 @@ export default function HomeScreen() {
         <View style={s.countRow}>
           <Text style={s.countNum}>{nd.days}</Text>
           <Text style={s.countUnit}>{t('days')}</Text>
-          <Text style={s.countNum}>{nd.hours}</Text>
+          <Text style={s.countNum}>{String(nd.hours).padStart(2, '0')}</Text>
           <Text style={s.countUnit}>{t('hours')}</Text>
+          <Text style={s.countNum}>{String(nd.minutes).padStart(2, '0')}</Text>
+          <Text style={s.countUnit}>{t('minutes')}</Text>
+          <Text style={s.countNum}>{String(nd.seconds).padStart(2, '0')}</Text>
+          <Text style={s.countUnit}>{t('seconds')}</Text>
         </View>
         <Text style={s.muted}>{t('drawTime') as string}</Text>
       </View>
@@ -128,9 +132,9 @@ const s = StyleSheet.create({
   center: { alignItems: 'center' },
   cardTitle: { color: C.text, fontSize: 16, fontWeight: 'bold', marginBottom: 10 },
   muted: { color: C.muted, fontSize: 12 },
-  countRow: { flexDirection: 'row', alignItems: 'baseline', gap: 4, marginBottom: 6 },
-  countNum: { color: C.accent, fontSize: 42, fontWeight: 'bold' },
-  countUnit: { color: C.muted, fontSize: 14, marginRight: 12 },
+  countRow: { flexDirection: 'row', alignItems: 'baseline', flexWrap: 'wrap', gap: 3, marginBottom: 6 },
+  countNum: { color: C.accent, fontSize: 26, fontWeight: 'bold' },
+  countUnit: { color: C.muted, fontSize: 12, marginRight: 10 },
   resultLabel: { color: C.muted, fontSize: 13, marginBottom: 10 },
   digitsRow: { flexDirection: 'row', gap: 5, marginBottom: 8 },
   digit: { width: 38, height: 46, backgroundColor: C.input, borderRadius: 8,

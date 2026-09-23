@@ -8,7 +8,8 @@ const I18N: Record<Lang, Record<string, string | string[]>> = {
   lo: {
     brand:'ກ້ອຍເຫຼົ້າ', tagline:'ກວດຜົນຫວຍລາວ • ເສດໂຊກ • ສະຖິຕິ',
     tabHome:'ໜ້າຫຼັກ', tabCheck:'ກວດຫວຍ', tabLucky:'ເສດໂຊກ', tabStats:'ສະຖິຕິ', tabRisk:'ສ່ຽງເລກ',
-    nextDraw:'ງວດຕໍ່ໄປ', drawTime:'ອອກຜົນ ~20:00 (ເວລາລາວ) ຈັນ–ສຸກ', days:'ມື້', hours:'ຊົ່ວໂມງ',
+    nextDraw:'ງວດຕໍ່ໄປ', drawTime:'ປິດຮັບເລກ 20:00 ໂມງ — ຜົນອອກປະມານ 20:25-20:30 ໂມງ (ບໍ່ແນ່ນອນ) ຈັນ–ສຸກ',
+    days:'ມື້', hours:'ຊົ່ວໂມງ', minutes:'ນາທີ', seconds:'ວິນາທີ',
     latestResult:'ຜົນງວດລ້າສຸດ', historyCount:'ງວດທີ່ມີຂໍ້ມູນ',
     menuCheckT:'ກວດຜົນຫວຍ', menuCheckD:'ພິມເລກ ແລ້ວຮູ້ຜົນທັນທີ',
     menuLuckyT:'ສຸ່ມເລກເສດໂຊກ', menuLuckyD:'ໃຫ້ກ້ອຍສຸ່ມເລກໃຫ້',
@@ -70,7 +71,8 @@ const I18N: Record<Lang, Record<string, string | string[]>> = {
   th: {
     brand:'ก้อยเหล้า', tagline:'ตรวจหวยลาว • สุ่มดูดวง • สถิติ',
     tabHome:'หน้าแรก', tabCheck:'ตรวจหวย', tabLucky:'ดูดวง', tabStats:'สถิติ', tabRisk:'เสี่ยงเลข',
-    nextDraw:'งวดต่อไป', drawTime:'ออกผล ~20:00 น. (เวลาลาว) จันทร์–ศุกร์', days:'วัน', hours:'ชม.',
+    nextDraw:'งวดต่อไป', drawTime:'ปิดรับเลขไม่เกิน 20:00 น. — ผลออกประมาณ 20:25-20:30 น. (ไม่แน่นอน) จันทร์–ศุกร์',
+    days:'วัน', hours:'ชม.', minutes:'นาที', seconds:'วินาที',
     latestResult:'ผลงวดล่าสุด', historyCount:'งวดที่มีข้อมูล',
     menuCheckT:'ตรวจผลหวย', menuCheckD:'พิมพ์เลขแล้วรู้ผลทันที',
     menuLuckyT:'สุ่มเลขดูดวง', menuLuckyD:'ให้ก้อยสุ่มเลขให้',
@@ -132,7 +134,8 @@ const I18N: Record<Lang, Record<string, string | string[]>> = {
   en: {
     brand:'KoyLao', tagline:'Lao lottery • lucky numbers • stats',
     tabHome:'Home', tabCheck:'Check', tabLucky:'Lucky', tabStats:'Stats', tabRisk:'Bets',
-    nextDraw:'Next draw', drawTime:'Results ~20:00 (Laos time), Mon–Fri', days:'d', hours:'h',
+    nextDraw:'Next draw', drawTime:'Entries close by 20:00 — results usually posted ~20:25-20:30 (varies), Mon–Fri',
+    days:'d', hours:'h', minutes:'m', seconds:'s',
     latestResult:'Latest result', historyCount:'draws on record',
     menuCheckT:'Check numbers', menuCheckD:'Type a number, see the result',
     menuLuckyT:'Lucky numbers', menuLuckyD:'Let Koi pick for you',
