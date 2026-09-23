@@ -11,7 +11,6 @@ import { useI18n } from '../data/i18n';
 import { C } from '../theme';
 
 const PURCHASES_KEY = 'koylao_purchases_v1';
-const LINES_SHOWN_STEP = 30;
 
 type LineStatus = 'pending' | 'win' | 'lose';
 interface PurchaseLine { num: string; amount: number; status: LineStatus; hit?: number | null; pay?: number; }
@@ -74,9 +73,7 @@ export default function RiskScreen() {
   const [betNum, setBetNum] = useState('');
   const [betAmt, setBetAmt] = useState('');
   const [betDate, setBetDate] = useState(localDateStr(nextWorkday()));
-  const [receipt, setReceipt] = useState<Purchase | null>(null);
-  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
-  const [shownCount, setShownCount] = useState<Record<string, number>>({});
+  const [viewing, setViewing] = useState<{ purchase: Purchase; justConfirmed: boolean } | null>(null);
   const workdays = getWorkdays(7);
 
   const [randomOpen, setRandomOpen] = useState(false);
@@ -212,7 +209,7 @@ export default function RiskScreen() {
     const { next } = await evalPurchases([purchase, ...purchases]);
     setCart([]);
     const settled = next.find(p => p.id === purchase.id) ?? purchase;
-    setReceipt(settled);
+    setViewing({ purchase: settled, justConfirmed: true });
   };
 
   const checkNow = async () => {
@@ -222,25 +219,22 @@ export default function RiskScreen() {
       .replace('{win}', String(winCount)).replace('{amt}', winAmt.toLocaleString()).replace('{lose}', String(loseCount)));
   };
 
-  const removeLine = async (purchaseId: string, num: string) => {
-    const next = purchases
-      .map(p => p.id === purchaseId ? { ...p, lines: p.lines.filter(l => l.num !== num) } : p)
-      .filter(p => p.lines.length > 0);
-    await savePurchases(next);
-  };
-
-  const removePurchase = async (id: string) => savePurchases(purchases.filter(p => p.id !== id));
-
-  const toggleExpand = (id: string) => {
-    setExpanded(prev => ({ ...prev, [id]: !prev[id] }));
-    setShownCount(prev => ({ ...prev, [id]: prev[id] ?? LINES_SHOWN_STEP }));
-  };
-
-  const showMoreLines = (id: string) => {
-    setShownCount(prev => ({ ...prev, [id]: (prev[id] ?? LINES_SHOWN_STEP) + LINES_SHOWN_STEP }));
+  const removePurchase = async (id: string) => {
+    Alert.alert('', t('confirmDeletePurchase') as string, [
+      { text: t('cancelBtn') as string, style: 'cancel' },
+      { text: t('confirmBtn') as string, style: 'destructive', onPress: () => savePurchases(purchases.filter(p => p.id !== id)) },
+    ]);
   };
 
   const lineIcon = (status: LineStatus) => status === 'pending' ? '⏳' : status === 'win' ? '✅' : '❌';
+
+  const overallStatus = (p: Purchase): { icon: string; text: string; color: string } => {
+    const winCount = p.lines.filter(l => l.status === 'win').length;
+    const pendingCount = p.lines.filter(l => l.status === 'pending').length;
+    if (pendingCount > 0) return { icon: '⏳', text: t('statusPending') as string, color: C.muted };
+    if (winCount > 0) return { icon: '✅', text: (t('statusWinCount') as string).replace('{n}', String(winCount)), color: '#2e9e4f' };
+    return { icon: '❌', text: t('statusAllLose') as string, color: '#e57373' };
+  };
 
   const cartTotal = cart.reduce((sum, c) => sum + c.amount, 0);
   const groupedDates = [...new Set(purchases.map(p => p.drawDate))].sort((a, b) => b.localeCompare(a));
@@ -369,55 +363,63 @@ export default function RiskScreen() {
         </View>
       </Modal>
 
-      {/* receipt modal */}
-      <Modal visible={!!receipt} animationType="fade" transparent onRequestClose={() => setReceipt(null)}>
+      {/* receipt / bill detail modal */}
+      <Modal visible={!!viewing} animationType="fade" transparent onRequestClose={() => setViewing(null)}>
         <View style={s.modalOverlay}>
           <ScrollView style={s.receiptScroll} contentContainerStyle={{ paddingBottom: 24 }}>
             <View style={s.receiptCard}>
-              <Text style={s.receiptCheck}>✅</Text>
-              <Text style={s.receiptTitle}>{t('purchaseConfirmed') as string}</Text>
-              {receipt && <Text style={s.receiptTime}>{fmtDateTime(receipt.createdAt, lang)}</Text>}
+              <Text style={s.receiptCheck}>{viewing?.justConfirmed ? '✅' : '🧾'}</Text>
+              <Text style={s.receiptTitle}>
+                {viewing?.justConfirmed ? t('purchaseConfirmed') as string : t('billDetails') as string}
+              </Text>
+              {viewing && <Text style={s.receiptTime}>{fmtDateTime(viewing.purchase.createdAt, lang)}</Text>}
               <View style={s.receiptDivider} />
-              {receipt && (
+              {viewing && (
                 <>
                   <View style={s.receiptRow}>
                     <Text style={s.receiptLabel}>{t('drawRoundLabel') as string}</Text>
-                    <Text style={s.receiptValue}>{fmtDate(receipt.drawDate, lang)}</Text>
+                    <Text style={s.receiptValue}>{fmtDate(viewing.purchase.drawDate, lang)}</Text>
                   </View>
                   <View style={s.receiptTableHead}>
-                    <Text style={[s.receiptTh, { flex: 1.4 }]}>{t('betNum') as string}</Text>
+                    <Text style={[s.receiptTh, { flex: 1.6 }]}>{t('betNum') as string}</Text>
                     <Text style={s.receiptTh}>{t('betAmount') as string}</Text>
                   </View>
-                  {receipt.lines.slice(0, 50).map(l => (
+                  {viewing.purchase.lines.slice(0, 100).map(l => (
                     <View key={l.num} style={s.receiptTr}>
-                      <Text style={[s.receiptTd, { flex: 1.4, fontFamily: 'Courier New' }]}>{l.num}</Text>
-                      <Text style={s.receiptTd}>{l.amount.toLocaleString()} ₭</Text>
+                      <Text style={[s.receiptTd, { flex: 1.6, fontFamily: 'Courier New' }]}>
+                        {lineIcon(l.status)} {l.num}
+                      </Text>
+                      <Text style={[s.receiptTd,
+                        l.status === 'win' && { color: '#2e9e4f', fontWeight: 'bold' },
+                        l.status === 'lose' && { color: '#e57373' }]}>
+                        {l.status === 'win' ? `+${(l.pay ?? 0).toLocaleString()}` : l.amount.toLocaleString()} ₭
+                      </Text>
                     </View>
                   ))}
-                  {receipt.lines.length > 50 && (
+                  {viewing.purchase.lines.length > 100 && (
                     <Text style={[s.muted, { textAlign: 'center', marginTop: 6 }]}>
-                      {(t('moreNumbers') as string).replace('{n}', String(receipt.lines.length - 50))}
+                      {(t('moreNumbers') as string).replace('{n}', String(viewing.purchase.lines.length - 100))}
                     </Text>
                   )}
                   <View style={s.receiptDivider} />
                   <View style={s.receiptRow}>
                     <Text style={s.receiptTotalLabel}>{t('totalCount') as string}</Text>
-                    <Text style={s.receiptTotalValue}>{receipt.lines.length} {t('numbersUnit') as string}</Text>
+                    <Text style={s.receiptTotalValue}>{viewing.purchase.lines.length} {t('numbersUnit') as string}</Text>
                   </View>
                   <View style={s.receiptRow}>
                     <Text style={s.receiptTotalLabel}>{t('totalAmountLabel') as string}</Text>
                     <Text style={s.receiptTotalValue}>
-                      {receipt.lines.reduce((sum, l) => sum + l.amount, 0).toLocaleString()} ₭
+                      {viewing.purchase.lines.reduce((sum, l) => sum + l.amount, 0).toLocaleString()} ₭
                     </Text>
                   </View>
                   <View style={s.receiptDivider} />
-                  <Text style={s.receiptMeta}>{t('billNo') as string}: {receipt.billNo}</Text>
-                  <Text style={s.receiptMeta}>{t('refNo') as string}: {receipt.refNo}</Text>
-                  <Text style={s.receiptMeta}>{t('channel') as string}: {receipt.channel}</Text>
+                  <Text style={s.receiptMeta}>{t('billNo') as string}: {viewing.purchase.billNo}</Text>
+                  <Text style={s.receiptMeta}>{t('refNo') as string}: {viewing.purchase.refNo}</Text>
+                  <Text style={s.receiptMeta}>{t('channel') as string}: {viewing.purchase.channel}</Text>
                 </>
               )}
               <Text style={s.receiptDemo}>ℹ️ {t('demoNote') as string}</Text>
-              <TouchableOpacity style={s.primaryBtn} onPress={() => setReceipt(null)}>
+              <TouchableOpacity style={s.primaryBtn} onPress={() => setViewing(null)}>
                 <Text style={s.primaryBtnTxt}>{t('close') as string}</Text>
               </TouchableOpacity>
             </View>
@@ -444,53 +446,32 @@ export default function RiskScreen() {
                 .filter(p => p.drawDate === date)
                 .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
                 .map(p => {
-                  const isOpen = !!expanded[p.id];
-                  const shown = shownCount[p.id] ?? LINES_SHOWN_STEP;
                   const totalAmt = p.lines.reduce((sum, l) => sum + l.amount, 0);
-                  const winLines = p.lines.filter(l => l.status === 'win');
+                  const st = overallStatus(p);
                   return (
-                    <View key={p.id} style={s.purchaseBox}>
-                      <View style={s.rowBetween}>
-                        <Text style={s.muted}>{fmtDateTime(p.createdAt, lang)}</Text>
-                        <TouchableOpacity onPress={() => removePurchase(p.id)}>
-                          <Text style={{ fontSize: 18 }}>🗑</Text>
-                        </TouchableOpacity>
-                      </View>
-                      <Text style={s.purchaseSub}>{t('billNo') as string}: {p.billNo}</Text>
-                      <Text style={s.purchaseSub}>{t('channel') as string}: {p.channel}</Text>
-                      <View style={s.rowBetween}>
-                        <Text style={s.purchaseCount}>
-                          {p.lines.length} {t('numbersUnit') as string}
-                          {winLines.length > 0 ? ` · ✅ ${winLines.length}` : ''}
-                        </Text>
-                        <Text style={s.purchaseTotal}>{totalAmt.toLocaleString()} ₭</Text>
-                      </View>
-                      <TouchableOpacity onPress={() => toggleExpand(p.id)}>
-                        <Text style={s.link}>
-                          {isOpen ? t('hideNums') as string : (t('viewAllNums') as string).replace('{n}', String(p.lines.length))}
-                        </Text>
-                      </TouchableOpacity>
-                      {isOpen && (
-                        <View style={{ marginTop: 8 }}>
-                          {p.lines.slice(0, shown).map(l => (
-                            <View key={l.num} style={s.lineRow}>
-                              <Text style={s.lineIcon}>{lineIcon(l.status)}</Text>
-                              <Text style={s.lineNum}>{l.num}</Text>
-                              <Text style={s.lineAmt}>
-                                {l.status === 'win' ? `+${(l.pay ?? 0).toLocaleString()}` : l.amount.toLocaleString()} ₭
-                              </Text>
-                              <TouchableOpacity onPress={() => removeLine(p.id, l.num)}>
-                                <Text style={{ fontSize: 16 }}>🗑</Text>
-                              </TouchableOpacity>
-                            </View>
-                          ))}
-                          {shown < p.lines.length && (
-                            <TouchableOpacity onPress={() => showMoreLines(p.id)}>
-                              <Text style={[s.link, { textAlign: 'center', marginTop: 6 }]}>{t('showMore') as string}</Text>
-                            </TouchableOpacity>
-                          )}
+                    <View key={p.id} style={s.purchaseRow}>
+                      <Text style={s.purchaseRowIcon}>{st.icon}</Text>
+                      <View style={{ flex: 1 }}>
+                        <View style={s.rowBetween}>
+                          <Text style={s.muted}>{fmtDateTime(p.createdAt, lang)}</Text>
+                          <Text style={s.purchaseTotal}>{totalAmt.toLocaleString()} ₭</Text>
                         </View>
-                      )}
+                        <Text style={s.purchaseSub}>{t('billNo') as string}: {p.billNo}</Text>
+                        <Text style={s.purchaseSub}>{t('channel') as string}: {p.channel}</Text>
+                        <View style={[s.rowBetween, { marginTop: 4, marginBottom: 0 }]}>
+                          <Text style={[s.purchaseStatusTxt, { color: st.color }]}>
+                            {st.text} · {p.lines.length} {t('numbersUnit') as string}
+                          </Text>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                            <TouchableOpacity onPress={() => setViewing({ purchase: p, justConfirmed: false })}>
+                              <Text style={s.link}>{t('viewDetailsBtn') as string}</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity onPress={() => removePurchase(p.id)}>
+                              <Text style={{ fontSize: 16 }}>🗑</Text>
+                            </TouchableOpacity>
+                          </View>
+                        </View>
+                      </View>
                     </View>
                   );
                 })}
@@ -556,15 +537,12 @@ const s = StyleSheet.create({
   empty: { color: C.muted, fontSize: 13, textAlign: 'center', paddingVertical: 8 },
   dateGroup: { marginBottom: 10 },
   dateGroupTitle: { color: C.muted, fontSize: 12, fontWeight: 'bold', marginBottom: 6, textTransform: 'uppercase' },
-  purchaseBox: { backgroundColor: C.input, borderRadius: 12, padding: 12, marginBottom: 10 },
+  purchaseRow: { flexDirection: 'row', backgroundColor: C.input, borderRadius: 12,
+    padding: 12, marginBottom: 10, gap: 10 },
+  purchaseRowIcon: { fontSize: 20, marginTop: 2 },
   purchaseSub: { color: C.muted, fontSize: 11, marginBottom: 2 },
-  purchaseCount: { color: C.text, fontSize: 13, fontWeight: 'bold', marginTop: 4 },
-  purchaseTotal: { color: C.gold, fontWeight: 'bold', fontSize: 14, marginTop: 4 },
-  lineRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 6,
-    borderBottomWidth: 1, borderBottomColor: C.border, gap: 8 },
-  lineIcon: { fontSize: 14 },
-  lineNum: { flex: 1, color: C.text, fontFamily: 'Courier New', fontSize: 15, fontWeight: 'bold' },
-  lineAmt: { color: C.muted, fontSize: 12 },
+  purchaseStatusTxt: { fontSize: 12, fontWeight: 'bold' },
+  purchaseTotal: { color: C.gold, fontWeight: 'bold', fontSize: 14 },
   disc: { color: C.muted, fontSize: 11, textAlign: 'center', lineHeight: 16 },
   receiptScroll: { maxHeight: '90%' },
   receiptCard: { backgroundColor: C.card, borderRadius: 20, padding: 24, margin: 16, alignItems: 'center' },
