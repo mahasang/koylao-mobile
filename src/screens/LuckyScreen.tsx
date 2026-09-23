@@ -94,10 +94,13 @@ export default function LuckyScreen() {
 
           {rolledNum && !rolling && (
             <>
-              <Text style={s.animalBadge}>
-                {animalEmoji(l2)} {animalName(l2, lang)}
-                <Text style={s.muted}> · {t('yourAnimal')}</Text>
-              </Text>
+              <View style={s.animalRow}>
+                <Text style={s.animalEmoji}>{animalEmoji(l2)}</Text>
+                <Text style={s.animalBadge}>
+                  {animalName(l2, lang)}
+                  <Text style={s.muted}> · {t('yourAnimal')}</Text>
+                </Text>
+              </View>
 
               {s2 && (
                 <View style={s.statRow}>
@@ -155,7 +158,9 @@ const s = StyleSheet.create({
   stage: { alignItems: 'center', paddingVertical: 8 },
   rolledNum: { fontSize: 52, fontFamily: 'Courier New', color: C.accent,
     letterSpacing: 6, marginBottom: 12, minHeight: 70, textAlign: 'center' },
-  animalBadge: { color: C.gold, fontWeight: 'bold', fontSize: 16, marginBottom: 12 },
+  animalRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },
+  animalEmoji: { fontSize: 34 },
+  animalBadge: { color: C.gold, fontWeight: 'bold', fontSize: 16 },
   statRow: { flexDirection: 'row', gap: 12, marginBottom: 12, justifyContent: 'center' },
   statBox: { alignItems: 'center', backgroundColor: C.input, borderRadius: 10, padding: 10, minWidth: 110 },
   statVal: { color: C.text, fontWeight: 'bold', fontSize: 16 },

@@ -1,11 +1,12 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, ScrollView,
   StyleSheet, Alert, Keyboard,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect } from '@react-navigation/native';
-import { DRAWS, animalName, animalEmoji } from '../data/lottery';
+import { getDraws, fetchLatestDraws, animalName, animalEmoji } from '../data/lottery';
+import type { Draw } from '../data/lottery';
 import { checkNumber, prizeId, fmtDate } from '../utils/lottery';
 import { useI18n } from '../data/i18n';
 import { C } from '../theme';
@@ -14,20 +15,31 @@ const SAVED_KEY = 'koylao_saved_v1';
 
 export default function CheckScreen() {
   const { t, lang } = useI18n();
-  const [selDate, setSelDate] = useState(DRAWS[0]?.date ?? '');
+  const [draws, setDraws] = useState<Draw[]>(getDraws());
+  const [selDate, setSelDate] = useState(draws[0]?.date ?? '');
   const [input, setInput] = useState('');
   const [result, setResult] = useState<{ num: string; res: ReturnType<typeof checkNumber> } | null>(null);
   const [saved, setSaved] = useState<string[]>([]);
   const [savedResults, setSavedResults] = useState<Record<string, ReturnType<typeof checkNumber>>>({});
   const [showPicker, setShowPicker] = useState(false);
+  const autoDate = useRef(true);
+
+  useEffect(() => {
+    fetchLatestDraws().then(() => {
+      const fresh = getDraws();
+      setDraws(fresh);
+      if (autoDate.current) setSelDate(fresh[0]?.date ?? '');
+    }).catch(() => {});
+  }, []);
 
   useFocusEffect(useCallback(() => {
+    setDraws(getDraws());
     AsyncStorage.getItem(SAVED_KEY).then(v => {
       try { setSaved(v ? JSON.parse(v) : []); } catch { setSaved([]); }
     });
   }, []));
 
-  const draw = DRAWS.find(d => d.date === selDate) ?? DRAWS[0];
+  const draw = draws.find(d => d.date === selDate) ?? draws[0];
 
   const persistSaved = async (arr: string[]) => {
     setSaved(arr);
@@ -75,10 +87,10 @@ export default function CheckScreen() {
         </TouchableOpacity>
         {showPicker && (
           <ScrollView style={s.picker} nestedScrollEnabled>
-            {DRAWS.slice(0, 60).map(d => (
+            {draws.slice(0, 60).map(d => (
               <TouchableOpacity key={d.date}
                 style={[s.pickerItem, d.date === selDate && s.pickerSel]}
-                onPress={() => { setSelDate(d.date); setShowPicker(false); setResult(null); }}>
+                onPress={() => { autoDate.current = false; setSelDate(d.date); setShowPicker(false); setResult(null); }}>
                 <Text style={[s.pickerTxt, d.date === selDate && { color: C.accent }]}>
                   {fmtDate(d.date, lang)} · {d.num}
                 </Text>
@@ -139,7 +151,10 @@ export default function CheckScreen() {
               <Text key={i} style={[s.digit, s.digitHl]}>{ch}</Text>
             ))}
           </View>
-          <Text style={s.animalBadge}>{animalEmoji(draw.num.slice(-2))} {animalName(draw.num.slice(-2), lang)}</Text>
+          <View style={s.animalRow}>
+            <Text style={s.animalEmoji}>{animalEmoji(draw.num.slice(-2))}</Text>
+            <Text style={s.animalBadge}>{animalName(draw.num.slice(-2), lang)}</Text>
+          </View>
           <View style={s.tailsRow}>
             {[5, 4, 3, 2].map(n => (
               <View key={n} style={s.tail}>
@@ -225,7 +240,9 @@ const s = StyleSheet.create({
     textAlign: 'center', lineHeight: 46, color: C.muted,
     fontFamily: 'Courier New', fontSize: 20 } as any,
   digitHl: { backgroundColor: C.accent + '33', color: C.accent, borderWidth: 1, borderColor: C.accent },
-  animalBadge: { color: C.gold, fontWeight: 'bold', fontSize: 15, marginBottom: 10 },
+  animalRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 },
+  animalEmoji: { fontSize: 34 },
+  animalBadge: { color: C.gold, fontWeight: 'bold', fontSize: 15 },
   tailsRow: { flexDirection: 'row', gap: 16 },
   tail: { alignItems: 'center' },
   tailLabel: { color: C.muted, fontSize: 11 },
