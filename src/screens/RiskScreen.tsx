@@ -1,7 +1,7 @@
 import React, { useState, useCallback } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, ScrollView,
-  StyleSheet, Alert, Keyboard,
+  StyleSheet, Alert, Keyboard, Modal, Platform,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect } from '@react-navigation/native';
@@ -54,6 +54,21 @@ export default function RiskScreen() {
   const [betDate, setBetDate] = useState(localDateStr(nextWorkday()));
   const workdays = getWorkdays(7);
 
+  const [randomOpen, setRandomOpen] = useState(false);
+  const [rDigits, setRDigitsState] = useState(6);
+  const [rFixed, setRFixed] = useState<string[]>(Array(6).fill(''));
+  const [rQty, setRQty] = useState('10');
+  const [rAmt, setRAmt] = useState('1000');
+
+  const setRDigits = (n: number) => {
+    setRDigitsState(n);
+    setRFixed(prev => Array.from({ length: n }, (_, i) => prev[i] ?? ''));
+  };
+  const setRFixedAt = (i: number, v: string) => {
+    const digit = v.replace(/\D/g, '').slice(-1);
+    setRFixed(prev => prev.map((p, idx) => (idx === i ? digit : p)));
+  };
+
   const loadBets = async () => {
     try {
       const v = await AsyncStorage.getItem(BETS_KEY);
@@ -103,6 +118,41 @@ export default function RiskScreen() {
     const next = await evalBets([newBet, ...bets]);
     Alert.alert('', t('betAdded') as string);
     setBetNum(''); setBetAmt('');
+  };
+
+  const confirmRandom = async () => {
+    Keyboard.dismiss();
+    const qty = Math.max(1, Math.min(1000, parseInt(rQty.replace(/\D/g, ''), 10) || 0));
+    const amount = parseInt(rAmt.replace(/\D/g, ''), 10);
+    if (!qty || !amount) { Alert.alert('', t('randomBad') as string); return; }
+    const max = maxStakeFor(rDigits);
+    if (max && amount > max) {
+      Alert.alert('', (t('betMaxExceeded') as string)
+        .replace('{n}', String(rDigits)).replace('{max}', max.toLocaleString()));
+      return;
+    }
+
+    const wildcards = rFixed.filter(f => !f).length;
+    const maxPossible = Math.pow(10, wildcards);
+    const wanted = Math.min(qty, maxPossible);
+    const existing = new Set(bets.filter(b => b.status === 'pending' && b.date === betDate).map(b => b.num));
+    const generated = new Set<string>();
+    let attempts = 0;
+    while (generated.size < wanted && attempts < wanted * 30 + 500) {
+      const num = rFixed.map(f => f || String(Math.floor(Math.random() * 10))).join('');
+      if (!existing.has(num) && !generated.has(num)) generated.add(num);
+      attempts++;
+    }
+
+    if (generated.size === 0) { Alert.alert('', t('randomBad') as string); return; }
+
+    const newBets: Bet[] = [...generated].map(num => ({
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      num, amount, date: betDate, status: 'pending' as BetStatus,
+    }));
+    await evalBets([...newBets, ...bets]);
+    Alert.alert('', (t('randomAdded') as string).replace('{n}', String(newBets.length)));
+    setRandomOpen(false);
   };
 
   const checkNow = async () => {
@@ -160,10 +210,71 @@ export default function RiskScreen() {
           </Text>
         )}
 
-        <TouchableOpacity style={s.primaryBtn} onPress={addBet}>
-          <Text style={s.primaryBtnTxt}>➕ {t('addBet')}</Text>
-        </TouchableOpacity>
+        <View style={s.btnRow}>
+          <TouchableOpacity style={[s.primaryBtn, { flex: 1 }]} onPress={addBet}>
+            <Text style={s.primaryBtnTxt}>➕ {t('addBet')}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={s.randomBtn} onPress={() => setRandomOpen(true)}>
+            <Text style={s.randomBtnTxt}>🎲 {t('riskRandomBtn')}</Text>
+          </TouchableOpacity>
+        </View>
       </View>
+
+      {/* random generator modal */}
+      <Modal visible={randomOpen} animationType="slide" transparent onRequestClose={() => setRandomOpen(false)}>
+        <View style={s.modalOverlay}>
+          <View style={s.modalCard}>
+            <Text style={s.modalTitle}>🎲 {t('riskRandomBtn')}</Text>
+
+            <Text style={s.label}>{t('chooseDigits') as string}</Text>
+            <View style={s.digitPickRow}>
+              {[1, 2, 3, 4, 5, 6].map(n => (
+                <TouchableOpacity key={n} style={[s.digitPickBtn, rDigits === n && s.digitPickBtnOn]}
+                  onPress={() => setRDigits(n)}>
+                  <Text style={[s.digitPickTxt, rDigits === n && s.digitPickTxtOn]}>{n}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <Text style={s.label}>{t('fixDigitsLabel') as string}</Text>
+            <View style={s.fixedRow}>
+              {rFixed.map((v, i) => (
+                <TextInput key={i} style={s.fixedBox} value={v}
+                  onChangeText={val => setRFixedAt(i, val)}
+                  keyboardType="numeric" maxLength={1} placeholder="?"
+                  placeholderTextColor={C.muted} />
+              ))}
+            </View>
+
+            <View style={s.rowGap}>
+              <View style={{ flex: 1 }}>
+                <Text style={s.label}>{t('randomQtyLabel') as string}</Text>
+                <TextInput style={s.input} value={rQty} onChangeText={setRQty}
+                  keyboardType="numeric" placeholder="10" placeholderTextColor={C.muted} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={s.label}>{t('betAmount') as string}</Text>
+                <TextInput style={s.input} value={rAmt} onChangeText={setRAmt}
+                  keyboardType="numeric" placeholder="1,000" placeholderTextColor={C.muted} />
+              </View>
+            </View>
+            <Text style={s.stakeHint}>
+              {(t('maxStakeHint') as string)
+                .replace('{max}', (maxStakeFor(rDigits) ?? 0).toLocaleString())
+                .replace('{n}', String(rDigits))} · {t('randomQtyNote') as string}
+            </Text>
+
+            <View style={s.rowGap}>
+              <TouchableOpacity style={[s.cancelBtn, { flex: 1 }]} onPress={() => setRandomOpen(false)}>
+                <Text style={s.cancelBtnTxt}>{t('cancelBtn') as string}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[s.primaryBtn, { flex: 1 }]} onPress={confirmRandom}>
+                <Text style={s.primaryBtnTxt}>{t('confirmBtn') as string}</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       {/* pending */}
       <View style={s.card}>
@@ -239,6 +350,29 @@ const s = StyleSheet.create({
   stakeHint: { color: C.muted, fontSize: 11, marginTop: -8, marginBottom: 12 },
   primaryBtn: { backgroundColor: C.accent, borderRadius: 10, padding: 14, alignItems: 'center', marginTop: 4 },
   primaryBtnTxt: { color: '#fff', fontWeight: 'bold', fontSize: 16 },
+  btnRow: { flexDirection: 'row', gap: 10 },
+  randomBtn: { backgroundColor: C.violet + '22', borderWidth: 1, borderColor: C.violet,
+    borderRadius: 10, paddingHorizontal: 16, paddingVertical: 14, alignItems: 'center',
+    justifyContent: 'center', marginTop: 4 },
+  randomBtnTxt: { color: C.violet, fontWeight: 'bold', fontSize: 15 },
+  modalOverlay: { flex: 1, backgroundColor: '#0006', justifyContent: 'flex-end' },
+  modalCard: { backgroundColor: C.card, borderTopLeftRadius: 20, borderTopRightRadius: 20,
+    padding: 24, paddingBottom: Platform.OS === 'ios' ? 40 : 24 },
+  modalTitle: { color: C.text, fontSize: 18, fontWeight: 'bold', marginBottom: 16, textAlign: 'center' },
+  digitPickRow: { flexDirection: 'row', gap: 8, marginBottom: 14 },
+  digitPickBtn: { flex: 1, paddingVertical: 12, borderRadius: 10, alignItems: 'center',
+    backgroundColor: C.input, borderWidth: 1, borderColor: C.border },
+  digitPickBtnOn: { backgroundColor: C.accent, borderColor: C.accent },
+  digitPickTxt: { color: C.muted, fontWeight: 'bold', fontSize: 15 },
+  digitPickTxtOn: { color: '#fff' },
+  fixedRow: { flexDirection: 'row', gap: 8, marginBottom: 14, flexWrap: 'wrap' },
+  fixedBox: { width: 44, height: 48, backgroundColor: C.input, borderRadius: 8,
+    borderWidth: 1, borderColor: C.border, textAlign: 'center', color: C.text,
+    fontFamily: 'Courier New', fontSize: 18 },
+  rowGap: { flexDirection: 'row', gap: 10 },
+  cancelBtn: { backgroundColor: C.input, borderRadius: 10, padding: 14,
+    alignItems: 'center', marginTop: 4, borderWidth: 1, borderColor: C.border },
+  cancelBtnTxt: { color: C.muted, fontWeight: 'bold', fontSize: 16 },
   dateChip: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20,
     backgroundColor: C.input, marginRight: 8, borderWidth: 1, borderColor: C.border },
   dateChipOn: { backgroundColor: C.accent, borderColor: C.accent },
