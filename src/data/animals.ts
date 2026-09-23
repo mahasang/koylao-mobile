@@ -41,6 +41,19 @@ export const ANIMALS = {
   eagle:      { lo: 'ອິນທຣີ', th: 'อินทรี', en: 'Eagle' },
 } as const;
 
+export const ANIMAL_EMOJI: Record<keyof typeof ANIMALS, string> = {
+  centipede: '🐛', small_fish: '🐠', snail: '🐌', goose: '🦢',
+  peacock: '🦚', lion: '🦁', tiger: '🐯', pig: '🐷',
+  rabbit: '🐰', buffalo: '🐃', otter: '🦦', dog: '🐶',
+  horse: '🐴', elephant: '🐘', cat: '🐈', mouse: '🐭',
+  bee: '🐝', heron: '🐦', wildcat: '🐆', butterfly: '🦋',
+  swallow: '🐦', dove: '🕊️', monkey: '🐒', frog: '🐸',
+  hawk: '🦅', naga: '🐉', turtle: '🐢', chicken: '🐔',
+  eel: '🐍', big_fish: '🐟', shrimp: '🦐', snake: '🐍',
+  spider: '🕷️', deer: '🦌', goat: '🐐', civet: '🦡',
+  ponyfish: '🐟', porcupine: '🦔', crab: '🦀', eagle: '🦅',
+};
+
 export const ANIMAL_MAP: Record<string, keyof typeof ANIMALS> = {
   '00':'centipede','01':'small_fish','02':'snail','03':'goose',
   '04':'peacock','05':'lion','06':'tiger','07':'pig',

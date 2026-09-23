@@ -4,7 +4,7 @@ import {
   StyleSheet, ActivityIndicator, useWindowDimensions,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
-import { DRAWS, animalName, getDraws, saveExtra, resetExtra } from '../data/lottery';
+import { DRAWS, animalName, animalEmoji, getDraws, saveExtra, resetExtra } from '../data/lottery';
 import type { Draw } from '../data/lottery';
 import { last2Stats, fmtDate } from '../utils/lottery';
 import { useI18n } from '../data/i18n';
@@ -87,7 +87,7 @@ export default function StatsScreen() {
       <View style={s.card}>
         <Text style={s.cardTitle}>🔥 {t('hotTitle')}</Text>
         {hot.map(([k2, st]) => (
-          <BarRow key={k2} label={`${k2} ${animalName(k2, lang) ?? ''}`} count={st.count} maxV={maxHot} />
+          <BarRow key={k2} label={`${k2} ${animalEmoji(k2)} ${animalName(k2, lang) ?? ''}`} count={st.count} maxV={maxHot} />
         ))}
       </View>
 
@@ -118,7 +118,7 @@ export default function StatsScreen() {
           <View key={d.date} style={[s.tableRow, i === 0 && s.tableRowHot]}>
             <Text style={[s.thDate, s.td]}>{fmtDate(d.date, lang, { day: 'numeric', month: 'short', year: '2-digit' })}</Text>
             <Text style={[s.thNum, s.tdMono]}>{d.num}</Text>
-            <Text style={[s.thAnimal, s.td]}>{animalName(d.num.slice(-2), lang) ?? '—'}</Text>
+            <Text style={[s.thAnimal, s.td]}>{animalName(d.num.slice(-2), lang) ? `${animalEmoji(d.num.slice(-2))} ${animalName(d.num.slice(-2), lang)}` : '—'}</Text>
           </View>
         ))}
         {histShown < draws.length && (

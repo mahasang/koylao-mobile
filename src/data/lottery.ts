@@ -1,5 +1,5 @@
 import rawDraws from './draws.json';
-import { ANIMALS, ANIMAL_MAP } from './animals';
+import { ANIMALS, ANIMAL_MAP, ANIMAL_EMOJI } from './animals';
 
 export type Draw = { date: string; num: string };
 export type Lang = 'lo' | 'th' | 'en';
@@ -28,6 +28,11 @@ export function animalName(last2: string, lang: Lang = 'lo'): string | null {
   if (!key) return null;
   const a = ANIMALS[key as keyof typeof ANIMALS];
   return a ? (a[lang as keyof typeof a] ?? a.th) : null;
+}
+
+export function animalEmoji(last2: string): string {
+  const key = ANIMAL_MAP[last2];
+  return key ? ANIMAL_EMOJI[key] : '🐾';
 }
 
 export { ANIMALS, ANIMAL_MAP };

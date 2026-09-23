@@ -4,7 +4,7 @@ import {
   StyleSheet, Animated, Alert,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { animalName } from '../data/lottery';
+import { animalName, animalEmoji } from '../data/lottery';
 import { last2Stats, fmtDate } from '../utils/lottery';
 import { DRAWS } from '../data/lottery';
 import { useI18n } from '../data/i18n';
@@ -95,7 +95,7 @@ export default function LuckyScreen() {
           {rolledNum && !rolling && (
             <>
               <Text style={s.animalBadge}>
-                🐾 {animalName(l2, lang)}
+                {animalEmoji(l2)} {animalName(l2, lang)}
                 <Text style={s.muted}> · {t('yourAnimal')}</Text>
               </Text>
 

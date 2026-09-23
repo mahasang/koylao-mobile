@@ -4,7 +4,7 @@ import {
   StyleSheet, Modal, Platform,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
-import { DRAWS, animalName } from '../data/lottery';
+import { DRAWS, animalName, animalEmoji } from '../data/lottery';
 import { nextDrawInfo, fmtDate } from '../utils/lottery';
 import { useI18n } from '../data/i18n';
 import { C } from '../theme';
@@ -48,7 +48,7 @@ export default function HomeScreen() {
               <Text key={i} style={[s.digit, i >= latest.num.length - 5 && s.digitHl]}>{ch}</Text>
             ))}
           </View>
-          <Text style={s.animalBadge}>🐾 {animalName(latest.num.slice(-2), lang)}</Text>
+          <Text style={s.animalBadge}>{animalEmoji(latest.num.slice(-2))} {animalName(latest.num.slice(-2), lang)}</Text>
           <View style={s.tailsRow}>
             {[5, 4, 3, 2].map(n => (
               <View key={n} style={s.tail}>
