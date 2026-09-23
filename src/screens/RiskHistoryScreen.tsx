@@ -2,7 +2,7 @@ import React, { useState, useCallback } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, StyleSheet, Alert, Modal } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import {
-  loadPurchases, savePurchases, evalPurchases, fmtDateTime, overallLineIcon,
+  loadPurchases, evalPurchases, fmtDateTime, overallLineIcon,
 } from '../data/purchases';
 import type { Purchase } from '../data/purchases';
 import { fmtDate } from '../utils/lottery';
@@ -22,20 +22,6 @@ export default function RiskHistoryScreen() {
     if (winCount + loseCount === 0) { Alert.alert('', t('noResultYet') as string); return; }
     Alert.alert('', (t('checkSummary') as string)
       .replace('{win}', String(winCount)).replace('{amt}', winAmt.toLocaleString()).replace('{lose}', String(loseCount)));
-  };
-
-  const removePurchase = async (id: string) => {
-    Alert.alert('', t('confirmDeletePurchase') as string, [
-      { text: t('cancelBtn') as string, style: 'cancel' },
-      {
-        text: t('confirmBtn') as string, style: 'destructive',
-        onPress: async () => {
-          const next = purchases.filter(p => p.id !== id);
-          await savePurchases(next);
-          setPurchases(next);
-        },
-      },
-    ]);
   };
 
   const overallStatus = (p: Purchase): { icon: string; text: string; color: string } => {
@@ -147,14 +133,9 @@ export default function RiskHistoryScreen() {
                           <Text style={[s.purchaseStatusTxt, { color: st.color }]}>
                             {st.text} · {p.lines.length} {t('numbersUnit') as string}
                           </Text>
-                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                            <TouchableOpacity onPress={() => setViewing(p)}>
-                              <Text style={s.link}>{t('viewDetailsBtn') as string}</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity onPress={() => removePurchase(p.id)}>
-                              <Text style={{ fontSize: 16 }}>🗑</Text>
-                            </TouchableOpacity>
-                          </View>
+                          <TouchableOpacity onPress={() => setViewing(p)}>
+                            <Text style={s.link}>{t('viewDetailsBtn') as string}</Text>
+                          </TouchableOpacity>
                         </View>
                       </View>
                     </View>

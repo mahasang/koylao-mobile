@@ -34,6 +34,22 @@ export default function RiskResultsScreen() {
 
   return (
     <ScrollView style={s.scroll} contentContainerStyle={s.content}>
+      {/* latest result — big & prominent */}
+      {draws[0] && (
+        <View style={[s.card, s.latestCard]}>
+          <Text style={s.latestLabel}>🏆 {t('latestResult')} · {fmtDate(draws[0].date, lang)}</Text>
+          <View style={s.latestDigitsRow}>
+            {[...draws[0].num].map((ch, i) => (
+              <Text key={i} style={s.latestDigit}>{ch}</Text>
+            ))}
+          </View>
+          <View style={s.animalRow}>
+            <Text style={s.animalEmoji}>{animalEmoji(draws[0].num.slice(-2))}</Text>
+            <Text style={s.animalBadge}>{animalName(draws[0].num.slice(-2), lang)}</Text>
+          </View>
+        </View>
+      )}
+
       <View style={s.card}>
         <Text style={s.cardTitle}>📅 {t('resultsHistoryTitle')} <Text style={{ color: C.accent }}>{draws.length}</Text></Text>
         <View style={[s.tableRow, s.tableHead]}>
@@ -80,6 +96,15 @@ const s = StyleSheet.create({
   content: { padding: 16, paddingBottom: 40 },
   card: { backgroundColor: C.card, borderRadius: 16, padding: 16, marginBottom: 14 },
   cardTitle: { color: C.text, fontSize: 17, fontWeight: 'bold', marginBottom: 12 },
+  latestCard: { alignItems: 'center' },
+  latestLabel: { color: C.muted, fontSize: 13, fontWeight: 'bold', marginBottom: 12 },
+  latestDigitsRow: { flexDirection: 'row', gap: 6, marginBottom: 12 },
+  latestDigit: { width: 48, height: 60, backgroundColor: C.accent + '33', borderWidth: 1.5, borderColor: C.accent,
+    borderRadius: 10, textAlign: 'center', lineHeight: 60, color: C.accent, fontSize: 28,
+    fontWeight: 'bold', fontFamily: 'Courier New' } as any,
+  animalRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  animalEmoji: { fontSize: 34 },
+  animalBadge: { color: C.gold, fontWeight: 'bold', fontSize: 16 },
   note: { color: C.muted, fontSize: 12, marginTop: 4 },
   tableRow: { flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: C.border, paddingVertical: 7 },
   tableHead: { borderBottomWidth: 2 },
