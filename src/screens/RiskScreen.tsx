@@ -3,15 +3,20 @@ import { View, Text, TouchableOpacity, ScrollView, StyleSheet } from 'react-nati
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { getDraws, fetchLatestDraws, animalName, animalEmoji } from '../data/lottery';
 import type { Draw } from '../data/lottery';
-import { nextDrawInfo } from '../utils/lottery';
+import { nextDrawInfo, fmtDate } from '../utils/lottery';
+import { loadPurchases, overallLineIcon } from '../data/purchases';
 import { useI18n } from '../data/i18n';
 import { C } from '../theme';
+
+const RECENT_LINES_CAP = 10;
 
 export default function RiskScreen() {
   const { t, lang } = useI18n();
   const nav = useNavigation<any>();
   const [nd, setNd] = useState(nextDrawInfo());
   const [draws, setDraws] = useState<Draw[]>(getDraws());
+  const [recentLines, setRecentLines] = useState<{ num: string; status: string; pay?: number; amount: number; drawDate: string }[]>([]);
+  const [hasMore, setHasMore] = useState(false);
 
   useEffect(() => {
     const iv = setInterval(() => setNd(nextDrawInfo()), 1000);
@@ -22,7 +27,16 @@ export default function RiskScreen() {
     fetchLatestDraws().then(() => setDraws(getDraws())).catch(() => {});
   }, []);
 
-  useFocusEffect(useCallback(() => { setDraws(getDraws()); }, []));
+  useFocusEffect(useCallback(() => {
+    setDraws(getDraws());
+    loadPurchases().then(purchases => {
+      const flat = purchases
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+        .flatMap(p => p.lines.map(l => ({ ...l, drawDate: p.drawDate })));
+      setRecentLines(flat.slice(0, RECENT_LINES_CAP));
+      setHasMore(flat.length > RECENT_LINES_CAP);
+    });
+  }, []));
 
   const latest = draws[0];
 
@@ -81,6 +95,28 @@ export default function RiskScreen() {
           <Text style={s.menuDesc}>{t('purchaseHistoryDesc') as string}</Text>
         </TouchableOpacity>
       </View>
+
+      {/* recent bets — compact, no bill details */}
+      {recentLines.length > 0 && (
+        <View style={s.card}>
+          <Text style={s.cardTitle}>🎫 {t('myBetsTitle') as string}</Text>
+          {recentLines.map((l, i) => (
+            <TouchableOpacity key={`${l.num}-${l.drawDate}-${i}`} style={s.betRow} onPress={() => nav.navigate('RiskHistory')}>
+              <Text style={s.betIcon}>{overallLineIcon(l.status as any)}</Text>
+              <Text style={s.betNum}>{l.num}</Text>
+              <Text style={s.betDate}>{fmtDate(l.drawDate, lang, { day: 'numeric', month: 'short' })}</Text>
+              <Text style={[s.betAmt, l.status === 'win' && s.betWin, l.status === 'lose' && s.betLose]}>
+                {l.status === 'win' ? `+${(l.pay ?? 0).toLocaleString()}` : l.amount.toLocaleString()} ₭
+              </Text>
+            </TouchableOpacity>
+          ))}
+          {hasMore && (
+            <TouchableOpacity onPress={() => nav.navigate('RiskHistory')}>
+              <Text style={s.moreLink}>{t('viewDetailsBtn') as string} →</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      )}
     </ScrollView>
   );
 }
@@ -112,4 +148,13 @@ const s = StyleSheet.create({
   menuIcon: { fontSize: 30, marginBottom: 8 },
   menuTitle: { color: C.text, fontSize: 14, fontWeight: 'bold', textAlign: 'center', marginBottom: 4 },
   menuDesc: { color: C.muted, fontSize: 11, textAlign: 'center', lineHeight: 15 },
+  betRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 9, gap: 8,
+    borderBottomWidth: 1, borderBottomColor: C.border },
+  betIcon: { fontSize: 14 },
+  betNum: { flex: 1, color: C.text, fontFamily: 'Courier New', fontSize: 15, fontWeight: 'bold' },
+  betDate: { color: C.muted, fontSize: 11 },
+  betAmt: { color: C.muted, fontSize: 12, minWidth: 70, textAlign: 'right' },
+  betWin: { color: '#2e9e4f', fontWeight: 'bold' },
+  betLose: { color: '#e57373' },
+  moreLink: { color: C.accent, fontWeight: 'bold', fontSize: 13, textAlign: 'center', paddingTop: 10 },
 });
