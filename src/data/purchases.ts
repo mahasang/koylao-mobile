@@ -83,9 +83,12 @@ export async function savePurchases(next: Purchase[]): Promise<void> {
   await AsyncStorage.setItem(PURCHASES_KEY, JSON.stringify(next));
 }
 
+export interface NewWin { num: string; amount: number; pay: number; hit: number; drawDate: string; billNo: string; }
+
 export async function evalPurchases(current: Purchase[]) {
   const draws = getDraws();
   let winCount = 0, loseCount = 0, winAmt = 0;
+  const newWins: NewWin[] = [];
   const next = current.map(p => {
     const draw = draws.find(d => d.date === p.drawDate);
     if (!draw) return p;
@@ -95,6 +98,7 @@ export async function evalPurchases(current: Purchase[]) {
       if (r.hit) {
         const pay = payoutFor(r.hit, l.amount) ?? 0;
         winCount++; winAmt += pay;
+        newWins.push({ num: l.num, amount: l.amount, pay, hit: r.hit, drawDate: p.drawDate, billNo: p.billNo });
         return { ...l, status: 'win' as LineStatus, hit: r.hit, pay };
       }
       loseCount++;
@@ -103,7 +107,7 @@ export async function evalPurchases(current: Purchase[]) {
     return { ...p, lines };
   });
   await savePurchases(next);
-  return { next, winCount, loseCount, winAmt };
+  return { next, winCount, loseCount, winAmt, newWins };
 }
 
 export function overallLineIcon(status: LineStatus) {

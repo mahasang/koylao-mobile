@@ -4,22 +4,25 @@ import { useFocusEffect } from '@react-navigation/native';
 import {
   loadPurchases, evalPurchases, fmtDateTime, overallLineIcon,
 } from '../data/purchases';
-import type { Purchase } from '../data/purchases';
+import type { Purchase, NewWin } from '../data/purchases';
 import { fmtDate } from '../utils/lottery';
 import { useI18n } from '../data/i18n';
+import WinCelebrationModal from '../components/WinCelebrationModal';
 import { C } from '../theme';
 
 export default function RiskHistoryScreen() {
   const { t, lang } = useI18n();
   const [purchases, setPurchases] = useState<Purchase[]>([]);
   const [viewing, setViewing] = useState<Purchase | null>(null);
+  const [celebration, setCelebration] = useState<{ wins: NewWin[]; total: number } | null>(null);
 
   useFocusEffect(useCallback(() => { loadPurchases().then(setPurchases); }, []));
 
   const checkNow = async () => {
-    const { next, winCount, loseCount, winAmt } = await evalPurchases(purchases);
+    const { next, winCount, loseCount, winAmt, newWins } = await evalPurchases(purchases);
     setPurchases(next);
     if (winCount + loseCount === 0) { Alert.alert('', t('noResultYet') as string); return; }
+    if (newWins.length > 0) { setCelebration({ wins: newWins, total: winAmt }); return; }
     Alert.alert('', (t('checkSummary') as string)
       .replace('{win}', String(winCount)).replace('{amt}', winAmt.toLocaleString()).replace('{lose}', String(loseCount)));
   };
@@ -36,6 +39,15 @@ export default function RiskHistoryScreen() {
 
   return (
     <ScrollView style={s.scroll} contentContainerStyle={s.content}>
+      {celebration && (
+        <WinCelebrationModal
+          visible
+          wins={celebration.wins}
+          totalAmt={celebration.total}
+          onClose={() => setCelebration(null)}
+        />
+      )}
+
       {/* bill detail modal */}
       <Modal visible={!!viewing} animationType="fade" transparent onRequestClose={() => setViewing(null)}>
         <View style={s.modalOverlay}>
