@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { StatusBar, Text } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { NavigationContainer } from '@react-navigation/native';
@@ -6,6 +6,7 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { I18nProvider, useI18n } from './src/data/i18n';
 import { AuthProvider } from './src/data/auth';
+import { hydrateDraws } from './src/data/lottery';
 import HomeScreen    from './src/screens/HomeScreen';
 import CheckScreen   from './src/screens/CheckScreen';
 import LuckyScreen   from './src/screens/LuckyScreen';
@@ -71,6 +72,12 @@ function Tabs() {
 }
 
 export default function App() {
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => { hydrateDraws().finally(() => setReady(true)); }, []);
+
+  if (!ready) return null;
+
   return (
     <SafeAreaProvider>
       <I18nProvider>

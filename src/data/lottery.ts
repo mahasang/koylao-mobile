@@ -1,9 +1,11 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import rawDraws from './draws.json';
 import { ANIMALS, ANIMAL_MAP, ANIMAL_EMOJI } from './animals';
 
 export type Draw = { date: string; num: string };
 export type Lang = 'lo' | 'th' | 'en';
 
+const EXTRA_KEY = 'koylao_extra_draws_v1';
 const SEED: Draw[] = (rawDraws as Draw[]).sort((a, b) => b.date.localeCompare(a.date));
 let _extra: Draw[] = [];
 
@@ -14,12 +16,26 @@ export function getDraws(): Draw[] {
   return Object.values(byDate).sort((a, b) => b.date.localeCompare(a.date));
 }
 
-export function saveExtra(all: Draw[]) {
-  const seedDates = new Set(SEED.map(d => d.date));
-  _extra = all.filter(d => !seedDates.has(d.date));
+// Loads whatever was fetched in a previous session, so the app doesn't
+// fall back to the bundled seed data (which stops at build time) every
+// time it's restarted, before the background fetch below has a chance to run.
+export async function hydrateDraws(): Promise<void> {
+  try {
+    const raw = await AsyncStorage.getItem(EXTRA_KEY);
+    if (raw) _extra = JSON.parse(raw);
+  } catch { /* keep whatever _extra already has */ }
 }
 
-export function resetExtra() { _extra = []; }
+async function saveExtra(all: Draw[]) {
+  const seedDates = new Set(SEED.map(d => d.date));
+  _extra = all.filter(d => !seedDates.has(d.date));
+  try { await AsyncStorage.setItem(EXTRA_KEY, JSON.stringify(_extra)); } catch { /* non-fatal */ }
+}
+
+export async function resetExtra() {
+  _extra = [];
+  try { await AsyncStorage.removeItem(EXTRA_KEY); } catch { /* non-fatal */ }
+}
 
 export const DRAWS: Draw[] = SEED;
 
@@ -43,7 +59,7 @@ export async function fetchLatestDraws(): Promise<number> {
     else if (byDate[date].num !== String(r.winNumber)) byDate[date].num = String(r.winNumber);
   }
   const next = Object.values(byDate).sort((a, b) => b.date.localeCompare(a.date));
-  saveExtra(next);
+  await saveExtra(next);
   return added;
 }
 

@@ -62,7 +62,7 @@ export default function StatsScreen() {
     setUpdating(false);
   };
 
-  const doReset = () => { resetExtra(); setDraws(getDraws()); setUpdateMsg(t('resetDone') as string); };
+  const doReset = async () => { await resetExtra(); setDraws(getDraws()); setUpdateMsg(t('resetDone') as string); };
 
   return (
     <ScrollView style={s.scroll} contentContainerStyle={s.content}>
