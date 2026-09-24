@@ -4,7 +4,8 @@ Run once, in order, after creating the Supabase project:
 
 1. **SQL Editor → New query** → paste and run `schema.sql` (auth profiles + referrals).
 2. **SQL Editor → New query** → paste and run `schema_admin.sql` (draws, purchases, admin role).
-3. Make yourself an admin (needed for the dashboard):
+3. **SQL Editor → New query** → paste and run `schema_admin_users.sql` (lets the admin dashboard list users with their email).
+4. Make yourself an admin (needed for the dashboard):
    ```sql
    update public.profiles set is_admin = true
    where id = (select id from auth.users where email = 'you@example.com');
@@ -53,3 +54,15 @@ select cron.unschedule('fetch-draws-evening');
 ```
 
 You can also trigger a fetch on demand from the admin dashboard's "Sync now" button, or by re-running `supabase functions invoke fetch-draws`.
+
+## Admin dashboard
+
+A separate Next.js app at `../koylao-admin` (sibling folder) gives admins a
+web UI: an overview page, a users list, a purchases/bets list (with a
+"ตรวจผลทั้งหมดตอนนี้" button that calls `evaluate_all_purchases`), and a draws
+page (manual add/edit + a "ดึงผลล่าสุดตอนนี้" button that calls the
+`fetch-draws` function directly). It uses the same Supabase URL/anon key as
+the mobile app (see `koylao-admin/.env.local.example`) — no service-role key
+needed, since access is gated by the `is_admin()` policies and the
+`admin_list_users()` function above. Run it with `npm run dev` from
+`koylao-admin/`.
