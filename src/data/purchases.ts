@@ -113,3 +113,23 @@ export async function evalPurchases(current: Purchase[]) {
 export function overallLineIcon(status: LineStatus) {
   return status === 'pending' ? '⏳' : status === 'win' ? '✅' : '❌';
 }
+
+export function purchaseTotal(p: Purchase): number {
+  return p.lines.reduce((sum, l) => sum + l.amount, 0);
+}
+
+export type OverallState = 'pending' | 'win' | 'lose';
+
+export function overallPurchaseState(p: Purchase): OverallState {
+  if (p.lines.some(l => l.status === 'pending')) return 'pending';
+  if (p.lines.some(l => l.status === 'win')) return 'win';
+  return 'lose';
+}
+
+export function overallPurchaseStatus(p: Purchase, t: (k: string) => string | string[]): { icon: string; text: string; state: OverallState } {
+  const winCount = p.lines.filter(l => l.status === 'win').length;
+  const state = overallPurchaseState(p);
+  if (state === 'pending') return { icon: '⏳', text: t('statusPending') as string, state };
+  if (state === 'win') return { icon: '✅', text: (t('statusWinCount') as string).replace('{n}', String(winCount)), state };
+  return { icon: '❌', text: t('statusAllLose') as string, state };
+}

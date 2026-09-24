@@ -3,19 +3,20 @@ import { View, Text, TouchableOpacity, ScrollView, StyleSheet } from 'react-nati
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { getDraws, fetchLatestDraws, animalName, animalEmoji } from '../data/lottery';
 import type { Draw } from '../data/lottery';
-import { nextDrawInfo, fmtDate } from '../utils/lottery';
-import { loadPurchases, overallLineIcon } from '../data/purchases';
+import { nextDrawInfo } from '../utils/lottery';
+import { loadPurchases, overallPurchaseStatus, purchaseTotal, fmtDateTime } from '../data/purchases';
+import type { Purchase } from '../data/purchases';
 import { useI18n } from '../data/i18n';
 import { C } from '../theme';
 
-const RECENT_LINES_CAP = 10;
+const RECENT_BETS_CAP = 5;
 
 export default function RiskScreen() {
   const { t, lang } = useI18n();
   const nav = useNavigation<any>();
   const [nd, setNd] = useState(nextDrawInfo());
   const [draws, setDraws] = useState<Draw[]>(getDraws());
-  const [recentLines, setRecentLines] = useState<{ num: string; status: string; pay?: number; amount: number; drawDate: string }[]>([]);
+  const [recentBets, setRecentBets] = useState<Purchase[]>([]);
   const [hasMore, setHasMore] = useState(false);
 
   useEffect(() => {
@@ -30,11 +31,9 @@ export default function RiskScreen() {
   useFocusEffect(useCallback(() => {
     setDraws(getDraws());
     loadPurchases().then(purchases => {
-      const flat = purchases
-        .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
-        .flatMap(p => p.lines.map(l => ({ ...l, drawDate: p.drawDate })));
-      setRecentLines(flat.slice(0, RECENT_LINES_CAP));
-      setHasMore(flat.length > RECENT_LINES_CAP);
+      const sorted = [...purchases].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+      setRecentBets(sorted.slice(0, RECENT_BETS_CAP));
+      setHasMore(sorted.length > RECENT_BETS_CAP);
     });
   }, []));
 
@@ -96,20 +95,29 @@ export default function RiskScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* recent bets — compact, no bill details */}
-      {recentLines.length > 0 && (
-        <View style={s.card}>
-          <Text style={s.cardTitle}>🎫 {t('myBetsTitle') as string}</Text>
-          {recentLines.map((l, i) => (
-            <TouchableOpacity key={`${l.num}-${l.drawDate}-${i}`} style={s.betRow} onPress={() => nav.navigate('RiskHistory')}>
-              <Text style={s.betIcon}>{overallLineIcon(l.status as any)}</Text>
-              <Text style={s.betNum}>{l.num}</Text>
-              <Text style={s.betDate}>{fmtDate(l.drawDate, lang, { day: 'numeric', month: 'short' })}</Text>
-              <Text style={[s.betAmt, l.status === 'win' && s.betWin, l.status === 'lose' && s.betLose]}>
-                {l.status === 'win' ? `+${(l.pay ?? 0).toLocaleString()}` : l.amount.toLocaleString()} ₭
-              </Text>
-            </TouchableOpacity>
-          ))}
+      {/* recent bets — one card per purchase, no line-by-line details */}
+      {recentBets.length > 0 && (
+        <View style={{ marginBottom: 4 }}>
+          <Text style={s.sectionTitle}>🎫 {t('myBetsTitle') as string}</Text>
+          {recentBets.map(p => {
+            const st = overallPurchaseStatus(p, t);
+            return (
+              <TouchableOpacity
+                key={p.id}
+                style={[s.betCard, st.state === 'win' && s.betCardWin, st.state === 'lose' && s.betCardLose]}
+                onPress={() => nav.navigate('RiskHistory', { openId: p.id })}
+              >
+                <Text style={s.betCardIcon}>{st.icon}</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={s.betCardAmt}>{purchaseTotal(p).toLocaleString()} ₭</Text>
+                  <Text style={s.betCardStatus}>{st.text}</Text>
+                </View>
+                <View style={{ alignItems: 'flex-end' }}>
+                  <Text style={s.betCardTime}>{fmtDateTime(p.createdAt, lang)}</Text>
+                </View>
+              </TouchableOpacity>
+            );
+          })}
           {hasMore && (
             <TouchableOpacity onPress={() => nav.navigate('RiskHistory')}>
               <Text style={s.moreLink}>{t('viewDetailsBtn') as string} →</Text>
@@ -148,13 +156,14 @@ const s = StyleSheet.create({
   menuIcon: { fontSize: 30, marginBottom: 8 },
   menuTitle: { color: C.text, fontSize: 14, fontWeight: 'bold', textAlign: 'center', marginBottom: 4 },
   menuDesc: { color: C.muted, fontSize: 11, textAlign: 'center', lineHeight: 15 },
-  betRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 9, gap: 8,
-    borderBottomWidth: 1, borderBottomColor: C.border },
-  betIcon: { fontSize: 14 },
-  betNum: { flex: 1, color: C.text, fontFamily: 'Courier New', fontSize: 15, fontWeight: 'bold' },
-  betDate: { color: C.muted, fontSize: 11 },
-  betAmt: { color: C.muted, fontSize: 12, minWidth: 70, textAlign: 'right' },
-  betWin: { color: '#2e9e4f', fontWeight: 'bold' },
-  betLose: { color: '#e57373' },
-  moreLink: { color: C.accent, fontWeight: 'bold', fontSize: 13, textAlign: 'center', paddingTop: 10 },
+  sectionTitle: { color: C.text, fontSize: 15, fontWeight: 'bold', marginBottom: 10 },
+  betCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#241f38',
+    borderRadius: 16, padding: 16, marginBottom: 10, gap: 14 },
+  betCardWin: { backgroundColor: '#1a3d2a' },
+  betCardLose: { backgroundColor: '#3a2020' },
+  betCardIcon: { fontSize: 30 },
+  betCardAmt: { color: '#fff', fontSize: 21, fontWeight: 'bold' },
+  betCardStatus: { color: '#b8b0d9', fontSize: 12, marginTop: 3, fontWeight: 'bold' },
+  betCardTime: { color: '#ffffffaa', fontSize: 11 },
+  moreLink: { color: C.accent, fontWeight: 'bold', fontSize: 13, textAlign: 'center', paddingTop: 4, paddingBottom: 10 },
 });

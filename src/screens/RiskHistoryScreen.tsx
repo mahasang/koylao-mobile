@@ -1,8 +1,8 @@
 import React, { useState, useCallback } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, StyleSheet, Alert, Modal } from 'react-native';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect, useRoute, useNavigation } from '@react-navigation/native';
 import {
-  loadPurchases, evalPurchases, fmtDateTime, overallLineIcon,
+  loadPurchases, evalPurchases, fmtDateTime, overallLineIcon, overallPurchaseStatus, purchaseTotal,
 } from '../data/purchases';
 import type { Purchase, NewWin } from '../data/purchases';
 import { fmtDate } from '../utils/lottery';
@@ -12,11 +12,23 @@ import { C } from '../theme';
 
 export default function RiskHistoryScreen() {
   const { t, lang } = useI18n();
+  const route = useRoute<any>();
+  const nav = useNavigation<any>();
   const [purchases, setPurchases] = useState<Purchase[]>([]);
   const [viewing, setViewing] = useState<Purchase | null>(null);
   const [celebration, setCelebration] = useState<{ wins: NewWin[]; total: number } | null>(null);
 
-  useFocusEffect(useCallback(() => { loadPurchases().then(setPurchases); }, []));
+  useFocusEffect(useCallback(() => {
+    loadPurchases().then(list => {
+      setPurchases(list);
+      const openId = route.params?.openId;
+      if (openId) {
+        const match = list.find(p => p.id === openId);
+        if (match) setViewing(match);
+        nav.setParams({ openId: undefined });
+      }
+    });
+  }, [route.params?.openId]));
 
   const checkNow = async () => {
     const { next, winCount, loseCount, winAmt, newWins } = await evalPurchases(purchases);
@@ -27,13 +39,7 @@ export default function RiskHistoryScreen() {
       .replace('{win}', String(winCount)).replace('{amt}', winAmt.toLocaleString()).replace('{lose}', String(loseCount)));
   };
 
-  const overallStatus = (p: Purchase): { icon: string; text: string; color: string } => {
-    const winCount = p.lines.filter(l => l.status === 'win').length;
-    const pendingCount = p.lines.filter(l => l.status === 'pending').length;
-    if (pendingCount > 0) return { icon: '⏳', text: t('statusPending') as string, color: C.muted };
-    if (winCount > 0) return { icon: '✅', text: (t('statusWinCount') as string).replace('{n}', String(winCount)), color: '#2e9e4f' };
-    return { icon: '❌', text: t('statusAllLose') as string, color: '#e57373' };
-  };
+  const overallStatus = (p: Purchase) => overallPurchaseStatus(p, t);
 
   const groupedDates = [...new Set(purchases.map(p => p.drawDate))].sort((a, b) => b.localeCompare(a));
 
@@ -129,8 +135,9 @@ export default function RiskHistoryScreen() {
                 .filter(p => p.drawDate === date)
                 .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
                 .map(p => {
-                  const totalAmt = p.lines.reduce((sum, l) => sum + l.amount, 0);
+                  const totalAmt = purchaseTotal(p);
                   const st = overallStatus(p);
+                  const stColor = st.state === 'win' ? '#2e9e4f' : st.state === 'lose' ? '#e57373' : C.muted;
                   return (
                     <View key={p.id} style={s.purchaseRow}>
                       <Text style={s.purchaseRowIcon}>{st.icon}</Text>
@@ -142,7 +149,7 @@ export default function RiskHistoryScreen() {
                         <Text style={s.purchaseSub}>{t('billNo') as string}: {p.billNo}</Text>
                         <Text style={s.purchaseSub}>{t('channel') as string}: {p.channel}</Text>
                         <View style={[s.rowBetween, { marginTop: 4, marginBottom: 0 }]}>
-                          <Text style={[s.purchaseStatusTxt, { color: st.color }]}>
+                          <Text style={[s.purchaseStatusTxt, { color: stColor }]}>
                             {st.text} · {p.lines.length} {t('numbersUnit') as string}
                           </Text>
                           <TouchableOpacity onPress={() => setViewing(p)}>
