@@ -1,7 +1,7 @@
 import React, { useState, useCallback } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, StyleSheet, ActivityIndicator } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
-import { animalName, animalEmoji, getDraws, fetchLatestDraws, resetExtra } from '../data/lottery';
+import { animalName, animalEmoji, getDraws, fetchLatestDraws } from '../data/lottery';
 import type { Draw } from '../data/lottery';
 import { fmtDate } from '../utils/lottery';
 import { useI18n } from '../data/i18n';
@@ -29,8 +29,6 @@ export default function RiskResultsScreen() {
     }
     setUpdating(false);
   };
-
-  const doReset = async () => { await resetExtra(); setDraws(getDraws()); setUpdateMsg(t('resetDone') as string); };
 
   return (
     <ScrollView style={s.scroll} contentContainerStyle={s.content}>
@@ -79,9 +77,6 @@ export default function RiskResultsScreen() {
             {updating
               ? <ActivityIndicator color="#fff" size="small" />
               : <Text style={s.btnTxt}>🔄 {t('updateBtn')}</Text>}
-          </TouchableOpacity>
-          <TouchableOpacity style={[s.btn, s.btnDanger]} onPress={doReset}>
-            <Text style={s.btnTxt}>🧹 {t('resetBtn')}</Text>
           </TouchableOpacity>
         </View>
         {updateMsg ? <Text style={s.updateMsg}>{updateMsg}</Text> : null}

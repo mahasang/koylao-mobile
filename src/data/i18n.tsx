@@ -85,6 +85,8 @@ const I18N: Record<Lang, Record<string, string | string[]>> = {
     yourCode:'ລະຫັດແນະນຳຂອງທ່ານ', creditsLabel:'ແຕ້ມສະສົມ', referredLabel:'ຄົນທີ່ແນະນຳສຳເລັດ',
     logoutBtn:'ອອກຈາກລະບົບ', copyCode:'ສຳເນົາລະຫັດ', copiedCode:'ສຳເນົາແລ້ວ!',
     referralHint:'ແບ່ງປັນລະຫັດນີ້ໃຫ້ໝູ່ — ເມື່ອລາວສະໝັກໂດຍໃສ່ລະຫັດຂອງທ່ານ ທ່ານຈະໄດ້ແຕ້ມສະສົມທັນທີ',
+    loginRequiredTitle:'ກະລຸນາເຂົ້າສູ່ລະບົບ', loginRequiredMsg:'ຕ້ອງເຂົ້າສູ່ລະບົບກ່ອນຈຶ່ງຈະຊື້ຫວຍໄດ້',
+    purchaseFailed:'ຊື້ບໍ່ສຳເລັດ ກະລຸນາລອງໃໝ່',
   },
   th: {
     brand:'ก้อยเหล้า', tagline:'ตรวจหวยลาว • สุ่มดูดวง • สถิติ',
@@ -166,6 +168,8 @@ const I18N: Record<Lang, Record<string, string | string[]>> = {
     yourCode:'รหัสแนะนำของคุณ', creditsLabel:'แต้มสะสม', referredLabel:'คนที่แนะนำสำเร็จ',
     logoutBtn:'ออกจากระบบ', copyCode:'คัดลอกรหัส', copiedCode:'คัดลอกแล้ว!',
     referralHint:'แชร์รหัสนี้ให้เพื่อน — เมื่อเพื่อนสมัครโดยใส่รหัสของคุณ คุณจะได้แต้มสะสมทันที',
+    loginRequiredTitle:'กรุณาเข้าสู่ระบบ', loginRequiredMsg:'ต้องเข้าสู่ระบบก่อนจึงจะซื้อหวยได้',
+    purchaseFailed:'ซื้อไม่สำเร็จ กรุณาลองใหม่',
   },
   en: {
     brand:'KoyLao', tagline:'Lao lottery • lucky numbers • stats',
@@ -248,6 +252,8 @@ const I18N: Record<Lang, Record<string, string | string[]>> = {
     yourCode:'Your referral code', creditsLabel:'Credits', referredLabel:'Successful referrals',
     logoutBtn:'Log out', copyCode:'Copy code', copiedCode:'Copied!',
     referralHint:'Share this code with friends — when they sign up with it, you get credits instantly',
+    loginRequiredTitle:'Please sign in', loginRequiredMsg:'You need to sign in before buying a ticket',
+    purchaseFailed:'Purchase failed, please try again',
   },
 };
 

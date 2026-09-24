@@ -1,16 +1,18 @@
 import React, { useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, ScrollView,
-  StyleSheet, Alert, Keyboard, Modal, Platform,
+  StyleSheet, Alert, Keyboard, Modal, Platform, ActivityIndicator,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import {
-  loadPurchases, evalPurchases, buildPurchase, fmtDateTime, overallLineIcon,
+  loadPurchases, evalPurchases, buildPurchase, insertPurchase, fmtDateTime, overallLineIcon,
   localDateStr, nextWorkday, getWorkdays,
 } from '../data/purchases';
 import type { Purchase, CartItem } from '../data/purchases';
 import { maxStakeFor, fmtDate } from '../utils/lottery';
 import { useI18n } from '../data/i18n';
+import { useAuth } from '../data/auth';
+import AccountModal from '../components/AccountModal';
 import { C } from '../theme';
 
 const AMOUNT_STEP = 1000;
@@ -25,6 +27,7 @@ function bumpAmount(value: string, delta: number, max: number | null): string {
 
 export default function RiskBuyScreen() {
   const { t, lang } = useI18n();
+  const { session } = useAuth();
   const nav = useNavigation<any>();
   const [purchases, setPurchases] = useState<Purchase[]>([]);
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -32,6 +35,8 @@ export default function RiskBuyScreen() {
   const [betAmt, setBetAmt] = useState('1000');
   const [betDate, setBetDate] = useState(localDateStr(nextWorkday()));
   const [receipt, setReceipt] = useState<Purchase | null>(null);
+  const [accountOpen, setAccountOpen] = useState(false);
+  const [buying, setBuying] = useState(false);
   const workdays = getWorkdays(7);
 
   const [randomOpen, setRandomOpen] = useState(false);
@@ -40,7 +45,7 @@ export default function RiskBuyScreen() {
   const [rQty, setRQty] = useState('10');
   const [rAmt, setRAmt] = useState('1000');
 
-  React.useEffect(() => { loadPurchases().then(setPurchases); }, []);
+  React.useEffect(() => { loadPurchases().then(setPurchases); }, [session?.user?.id]);
 
   const setRDigits = (n: number) => {
     setRDigitsState(n);
@@ -130,12 +135,20 @@ export default function RiskBuyScreen() {
 
   const confirmPurchase = async () => {
     if (cart.length === 0) { Alert.alert('', t('cartEmptyWarn') as string); return; }
-    const purchase = buildPurchase(betDate, cart, t('demoChannel') as string);
-    const { next } = await evalPurchases([purchase, ...purchases]);
-    setPurchases(next);
-    setCart([]);
-    const settled = next.find(p => p.id === purchase.id) ?? purchase;
-    setReceipt(settled);
+    if (!session) { setAccountOpen(true); return; }
+    setBuying(true);
+    try {
+      const purchase = buildPurchase(betDate, cart, t('demoChannel') as string);
+      await insertPurchase(purchase);
+      const { next } = await evalPurchases(purchases);
+      setPurchases(next);
+      setCart([]);
+      const settled = next.find(p => p.id === purchase.id) ?? purchase;
+      setReceipt(settled);
+    } catch {
+      Alert.alert('', t('purchaseFailed') as string);
+    }
+    setBuying(false);
   };
 
   const closeReceipt = () => {
@@ -225,9 +238,14 @@ export default function RiskBuyScreen() {
             <Text style={[s.muted, { textAlign: 'right', marginVertical: 8 }]}>
               {(t('stakeTotal') as string).replace('{v}', cartTotal.toLocaleString())}
             </Text>
-            <TouchableOpacity style={s.confirmPurchaseBtn} onPress={confirmPurchase}>
-              <Text style={s.primaryBtnTxt}>✅ {t('confirmPurchaseBtn')}</Text>
+            <TouchableOpacity style={s.confirmPurchaseBtn} onPress={confirmPurchase} disabled={buying}>
+              {buying
+                ? <ActivityIndicator color="#fff" size="small" />
+                : <Text style={s.primaryBtnTxt}>✅ {t('confirmPurchaseBtn')}</Text>}
             </TouchableOpacity>
+            {!session && (
+              <Text style={[s.muted, { textAlign: 'center', marginTop: 8 }]}>🔒 {t('loginRequiredMsg') as string}</Text>
+            )}
           </View>
         )}
       </View>
@@ -348,6 +366,8 @@ export default function RiskBuyScreen() {
           </ScrollView>
         </View>
       </Modal>
+
+      <AccountModal visible={accountOpen} onClose={() => setAccountOpen(false)} />
     </ScrollView>
   );
 }

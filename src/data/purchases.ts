@@ -1,9 +1,6 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { getDraws } from './lottery';
-import { checkNumber, payoutFor, fmtDate } from '../utils/lottery';
+import { supabase } from '../lib/supabase';
+import { fmtDate } from '../utils/lottery';
 import type { Lang } from './lottery';
-
-const PURCHASES_KEY = 'koylao_purchases_v1';
 
 export type LineStatus = 'pending' | 'win' | 'lose';
 export interface PurchaseLine { num: string; amount: number; status: LineStatus; hit?: number | null; pay?: number; }
@@ -72,42 +69,77 @@ export function buildPurchase(drawDate: string, cart: CartItem[], channel: strin
   };
 }
 
-export async function loadPurchases(): Promise<Purchase[]> {
-  try {
-    const v = await AsyncStorage.getItem(PURCHASES_KEY);
-    return v ? JSON.parse(v) : [];
-  } catch { return []; }
+// Writes a freshly-built purchase (see buildPurchase) to Supabase.
+// Requires a signed-in user — callers must check useAuth().session first.
+export async function insertPurchase(p: Purchase): Promise<void> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('not signed in');
+
+  const { error: purchaseErr } = await supabase.from('purchases').insert({
+    id: p.id, user_id: user.id, bill_no: p.billNo, ref_no: p.refNo,
+    channel: p.channel, draw_date: p.drawDate, created_at: p.createdAt,
+  });
+  if (purchaseErr) throw purchaseErr;
+
+  const lineRows = p.lines.map(l => ({ purchase_id: p.id, num: l.num, amount: l.amount, status: 'pending' }));
+  const { error: linesErr } = await supabase.from('purchase_lines').insert(lineRows);
+  if (linesErr) throw linesErr;
 }
 
-export async function savePurchases(next: Purchase[]): Promise<void> {
-  await AsyncStorage.setItem(PURCHASES_KEY, JSON.stringify(next));
+// Loads the signed-in user's purchases (with their lines) from Supabase.
+// Returns an empty list when logged out — there's nothing of theirs to show.
+export async function loadPurchases(): Promise<Purchase[]> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return [];
+
+  const { data, error } = await supabase
+    .from('purchases')
+    .select('id, bill_no, ref_no, channel, draw_date, created_at, purchase_lines(num, amount, status, hit, pay)')
+    .eq('user_id', user.id)
+    .order('created_at', { ascending: false });
+  if (error || !data) return [];
+
+  return data.map((p: any) => ({
+    id: p.id,
+    billNo: p.bill_no,
+    refNo: p.ref_no,
+    channel: p.channel,
+    drawDate: p.draw_date,
+    createdAt: p.created_at,
+    lines: (p.purchase_lines ?? []).map((l: any) => ({
+      num: l.num, amount: l.amount, status: l.status, hit: l.hit, pay: l.pay,
+    })),
+  }));
 }
 
 export interface NewWin { num: string; amount: number; pay: number; hit: number; drawDate: string; billNo: string; }
 
-export async function evalPurchases(current: Purchase[]) {
-  const draws = getDraws();
-  let winCount = 0, loseCount = 0, winAmt = 0;
+// Asks the server to evaluate all of the signed-in user's pending lines
+// against the canonical draws table (see evaluate_my_purchases() in
+// supabase/schema_admin.sql), then reloads to report what's new.
+export async function evalPurchases(previous: Purchase[]) {
+  const before = new Map<string, LineStatus>();
+  previous.forEach(p => p.lines.forEach(l => before.set(`${p.id}:${l.num}`, l.status)));
+
+  const { data, error } = await supabase.rpc('evaluate_my_purchases');
+  if (error) throw error;
+  const row = Array.isArray(data) ? data[0] : data;
+
+  const next = await loadPurchases();
   const newWins: NewWin[] = [];
-  const next = current.map(p => {
-    const draw = draws.find(d => d.date === p.drawDate);
-    if (!draw) return p;
-    const lines = p.lines.map(l => {
-      if (l.status !== 'pending') return l;
-      const r = checkNumber(l.num, draw.num);
-      if (r.hit) {
-        const pay = payoutFor(r.hit, l.amount) ?? 0;
-        winCount++; winAmt += pay;
-        newWins.push({ num: l.num, amount: l.amount, pay, hit: r.hit, drawDate: p.drawDate, billNo: p.billNo });
-        return { ...l, status: 'win' as LineStatus, hit: r.hit, pay };
-      }
-      loseCount++;
-      return { ...l, status: 'lose' as LineStatus, hit: null, pay: 0 };
-    });
-    return { ...p, lines };
-  });
-  await savePurchases(next);
-  return { next, winCount, loseCount, winAmt, newWins };
+  next.forEach(p => p.lines.forEach(l => {
+    if (l.status === 'win' && before.get(`${p.id}:${l.num}`) !== 'win') {
+      newWins.push({ num: l.num, amount: l.amount, pay: l.pay ?? 0, hit: l.hit ?? 0, drawDate: p.drawDate, billNo: p.billNo });
+    }
+  }));
+
+  return {
+    next,
+    winCount: row?.win_count ?? 0,
+    loseCount: row?.lose_count ?? 0,
+    winAmt: Number(row?.win_amount ?? 0),
+    newWins,
+  };
 }
 
 export function overallLineIcon(status: LineStatus) {
