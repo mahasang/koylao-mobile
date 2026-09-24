@@ -16,6 +16,7 @@ create table if not exists public.draws (
 
 alter table public.draws enable row level security;
 
+drop policy if exists "draws_select_all" on public.draws;
 create policy "draws_select_all"
   on public.draws for select
   using (true);
@@ -35,10 +36,12 @@ as $$
   select coalesce((select is_admin from public.profiles where id = auth.uid()), false);
 $$;
 
+drop policy if exists "profiles_select_admin" on public.profiles;
 create policy "profiles_select_admin"
   on public.profiles for select
   using (public.is_admin());
 
+drop policy if exists "draws_write_admin" on public.draws;
 create policy "draws_write_admin"
   on public.draws for all
   using (public.is_admin())
@@ -61,14 +64,17 @@ create table if not exists public.purchases (
 
 alter table public.purchases enable row level security;
 
+drop policy if exists "purchases_select_own" on public.purchases;
 create policy "purchases_select_own"
   on public.purchases for select
   using (auth.uid() = user_id);
 
+drop policy if exists "purchases_insert_own" on public.purchases;
 create policy "purchases_insert_own"
   on public.purchases for insert
   with check (auth.uid() = user_id);
 
+drop policy if exists "purchases_select_admin" on public.purchases;
 create policy "purchases_select_admin"
   on public.purchases for select
   using (public.is_admin());
@@ -98,6 +104,7 @@ create table if not exists public.purchase_lines (
 
 alter table public.purchase_lines enable row level security;
 
+drop policy if exists "purchase_lines_select_own" on public.purchase_lines;
 create policy "purchase_lines_select_own"
   on public.purchase_lines for select
   using (exists (
@@ -105,6 +112,7 @@ create policy "purchase_lines_select_own"
     where p.id = purchase_lines.purchase_id and p.user_id = auth.uid()
   ));
 
+drop policy if exists "purchase_lines_insert_own" on public.purchase_lines;
 create policy "purchase_lines_insert_own"
   on public.purchase_lines for insert
   with check (exists (
@@ -112,6 +120,7 @@ create policy "purchase_lines_insert_own"
     where p.id = purchase_lines.purchase_id and p.user_id = auth.uid()
   ));
 
+drop policy if exists "purchase_lines_select_admin" on public.purchase_lines;
 create policy "purchase_lines_select_admin"
   on public.purchase_lines for select
   using (public.is_admin());
