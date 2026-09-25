@@ -51,6 +51,11 @@ export default function AccountModal({ visible, onClose }: { visible: boolean; o
               <Text style={s.title}>{t('profileTitle') as string}</Text>
               <Text style={s.email}>{session.user.email}</Text>
 
+              <View style={s.balanceBox}>
+                <Text style={s.balanceLabel}>{t('balanceLabel') as string}</Text>
+                <Text style={s.balanceNum}>{(stats?.balance ?? 0).toLocaleString()} ₭</Text>
+              </View>
+
               <View style={s.statRow}>
                 <View style={s.statBox}>
                   <Text style={s.statNum}>{stats?.credits ?? 0}</Text>
@@ -126,6 +131,10 @@ const s = StyleSheet.create({
   icon: { fontSize: 40, marginBottom: 8 },
   title: { color: C.text, fontSize: 18, fontWeight: 'bold', marginBottom: 4 },
   email: { color: C.muted, fontSize: 13, marginBottom: 16 },
+  balanceBox: { width: '100%', backgroundColor: C.accent + '22', borderWidth: 1, borderColor: C.accent,
+    borderRadius: 14, padding: 16, alignItems: 'center', marginBottom: 12 },
+  balanceLabel: { color: C.muted, fontSize: 12, marginBottom: 4 },
+  balanceNum: { color: C.accent, fontSize: 26, fontWeight: 'bold' },
   statRow: { flexDirection: 'row', gap: 12, width: '100%', marginBottom: 16 },
   statBox: { flex: 1, backgroundColor: C.input, borderRadius: 12, padding: 14, alignItems: 'center' },
   statNum: { color: C.accent, fontSize: 24, fontWeight: 'bold' },

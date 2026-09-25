@@ -7,11 +7,13 @@ import {
 import type { Purchase, NewWin } from '../data/purchases';
 import { fmtDate } from '../utils/lottery';
 import { useI18n } from '../data/i18n';
+import { useAuth } from '../data/auth';
 import WinCelebrationModal from '../components/WinCelebrationModal';
 import { C } from '../theme';
 
 export default function RiskHistoryScreen() {
   const { t, lang } = useI18n();
+  const { refreshStats } = useAuth();
   const route = useRoute<any>();
   const nav = useNavigation<any>();
   const [purchases, setPurchases] = useState<Purchase[]>([]);
@@ -33,6 +35,7 @@ export default function RiskHistoryScreen() {
   const checkNow = async () => {
     const { next, winCount, loseCount, winAmt, newWins } = await evalPurchases(purchases);
     setPurchases(next);
+    if (winCount > 0) refreshStats();
     if (winCount + loseCount === 0) { Alert.alert('', t('noResultYet') as string); return; }
     if (newWins.length > 0) { setCelebration({ wins: newWins, total: winAmt }); return; }
     Alert.alert('', (t('checkSummary') as string)

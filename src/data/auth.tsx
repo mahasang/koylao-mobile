@@ -6,6 +6,7 @@ export interface ReferralStats {
   credits: number;
   referral_code: string;
   referred_count: number;
+  balance: number;
 }
 
 interface AuthCtx {

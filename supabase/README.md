@@ -5,7 +5,8 @@ Run once, in order, after creating the Supabase project:
 1. **SQL Editor → New query** → paste and run `schema.sql` (auth profiles + referrals).
 2. **SQL Editor → New query** → paste and run `schema_admin.sql` (draws, purchases, admin role).
 3. **SQL Editor → New query** → paste and run `schema_admin_users.sql` (lets the admin dashboard list users with their email).
-4. Make yourself an admin (needed for the dashboard):
+4. **SQL Editor → New query** → paste and run `schema_wallet.sql` (trial-money balance: 1,000,000 for every user, spent on purchase, paid back on a win).
+5. Make yourself an admin (needed for the dashboard):
    ```sql
    update public.profiles set is_admin = true
    where id = (select id from auth.users where email = 'you@example.com');

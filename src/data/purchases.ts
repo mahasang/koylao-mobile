@@ -69,21 +69,22 @@ export function buildPurchase(drawDate: string, cart: CartItem[], channel: strin
   };
 }
 
-// Writes a freshly-built purchase (see buildPurchase) to Supabase.
-// Requires a signed-in user — callers must check useAuth().session first.
+// Writes a freshly-built purchase (see buildPurchase) to Supabase via
+// create_purchase(), which checks and deducts the caller's trial-money
+// balance atomically server-side — the client never inserts a purchase
+// row directly. Requires a signed-in user — callers must check
+// useAuth().session first. Throws with message 'insufficient_balance'
+// when the user doesn't have enough balance to cover the cart.
 export async function insertPurchase(p: Purchase): Promise<void> {
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) throw new Error('not signed in');
-
-  const { error: purchaseErr } = await supabase.from('purchases').insert({
-    id: p.id, user_id: user.id, bill_no: p.billNo, ref_no: p.refNo,
-    channel: p.channel, draw_date: p.drawDate, created_at: p.createdAt,
+  const { error } = await supabase.rpc('create_purchase', {
+    p_id: p.id,
+    p_bill_no: p.billNo,
+    p_ref_no: p.refNo,
+    p_channel: p.channel,
+    p_draw_date: p.drawDate,
+    p_lines: p.lines.map(l => ({ num: l.num, amount: l.amount })),
   });
-  if (purchaseErr) throw purchaseErr;
-
-  const lineRows = p.lines.map(l => ({ purchase_id: p.id, num: l.num, amount: l.amount, status: 'pending' }));
-  const { error: linesErr } = await supabase.from('purchase_lines').insert(lineRows);
-  if (linesErr) throw linesErr;
+  if (error) throw error;
 }
 
 // Loads the signed-in user's purchases (with their lines) from Supabase.

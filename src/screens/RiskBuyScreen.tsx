@@ -27,7 +27,7 @@ function bumpAmount(value: string, delta: number, max: number | null): string {
 
 export default function RiskBuyScreen() {
   const { t, lang } = useI18n();
-  const { session } = useAuth();
+  const { session, stats, refreshStats } = useAuth();
   const nav = useNavigation<any>();
   const [purchases, setPurchases] = useState<Purchase[]>([]);
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -140,13 +140,17 @@ export default function RiskBuyScreen() {
     try {
       const purchase = buildPurchase(betDate, cart, t('demoChannel') as string);
       await insertPurchase(purchase);
+      await refreshStats();
       const { next } = await evalPurchases(purchases);
       setPurchases(next);
       setCart([]);
       const settled = next.find(p => p.id === purchase.id) ?? purchase;
       setReceipt(settled);
-    } catch {
-      Alert.alert('', t('purchaseFailed') as string);
+    } catch (e: any) {
+      const msg = e?.message?.includes('insufficient_balance')
+        ? t('insufficientBalance') as string
+        : t('purchaseFailed') as string;
+      Alert.alert('', msg);
     }
     setBuying(false);
   };
@@ -160,6 +164,13 @@ export default function RiskBuyScreen() {
 
   return (
     <ScrollView style={s.scroll} keyboardShouldPersistTaps="handled" contentContainerStyle={s.content}>
+      {session && (
+        <View style={s.balanceBar}>
+          <Text style={s.balanceBarLabel}>{t('balanceLabel') as string}</Text>
+          <Text style={s.balanceBarValue}>{(stats?.balance ?? 0).toLocaleString()} ₭</Text>
+        </View>
+      )}
+
       <View style={s.card}>
         <Text style={s.hint}>{t('riskHint') as string}</Text>
 
@@ -376,6 +387,11 @@ const s = StyleSheet.create({
   scroll: { flex: 1, backgroundColor: C.bg },
   content: { padding: 16, paddingBottom: 40 },
   card: { backgroundColor: C.card, borderRadius: 16, padding: 16, marginBottom: 14 },
+  balanceBar: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    backgroundColor: C.accent + '18', borderWidth: 1, borderColor: C.accent,
+    borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10, marginBottom: 14 },
+  balanceBarLabel: { color: C.muted, fontSize: 12 },
+  balanceBarValue: { color: C.accent, fontWeight: 'bold', fontSize: 16 },
   hint: { color: C.muted, fontSize: 13, lineHeight: 18, marginBottom: 14 },
   label: { color: C.muted, fontSize: 13, marginBottom: 6 },
   muted: { color: C.muted, fontSize: 12 },
