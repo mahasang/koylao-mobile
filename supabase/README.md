@@ -6,11 +6,40 @@ Run once, in order, after creating the Supabase project:
 2. **SQL Editor → New query** → paste and run `schema_admin.sql` (draws, purchases, admin role).
 3. **SQL Editor → New query** → paste and run `schema_admin_users.sql` (lets the admin dashboard list users with their email).
 4. **SQL Editor → New query** → paste and run `schema_wallet.sql` (trial-money balance: 1,000,000 for every user, spent on purchase, paid back on a win).
-5. Make yourself an admin (needed for the dashboard):
+5. **SQL Editor → New query** → paste and run `schema_rbac.sql` (roles, audit log, feature flags — see below).
+6. Make yourself an admin (needed for the dashboard):
    ```sql
    update public.profiles set is_admin = true
    where id = (select id from auth.users where email = 'you@example.com');
    ```
+   `schema_rbac.sql` automatically promotes anyone with `is_admin = true` at the
+   time it runs to `role = 'super_admin'`, so do this step *before* step 5 if
+   you haven't made yourself admin yet — otherwise use `admin_set_role()`
+   afterwards (see below).
+
+## Roles, audit log, and feature flags
+
+`schema_rbac.sql` adds finer-grained staff permissions on top of the single
+`is_admin` boolean:
+
+- **Roles**: `super_admin` (everything), `finance_admin` (can adjust user
+  balances, cannot touch draws), `draws_admin` (can edit lottery results,
+  cannot touch balances), `support_admin` (read-only). Change a user's role
+  (super_admin only) via:
+  ```sql
+  select public.admin_set_role(
+    (select id from auth.users where email = 'someone@example.com'),
+    'finance_admin'  -- or 'draws_admin', 'support_admin', 'super_admin', 'user'
+  );
+  ```
+  or from the dashboard's Users page.
+- **Audit log**: every balance adjustment, manual draw edit, role change, and
+  settlement run writes to `audit_log` — viewable on the dashboard's Audit
+  Log page, or via `select * from public.admin_list_audit_log();`.
+- **Feature flags**: `feature_flags` table, readable by anyone (including the
+  mobile app), editable only by `super_admin` via `admin_set_flag('key',
+  true/false)` or the dashboard's Feature Flags page. Seeded with
+  `buy_enabled`, `random_generator_enabled`, and `maintenance_mode`.
 
 ## Deploy the fetch-draws Edge Function
 

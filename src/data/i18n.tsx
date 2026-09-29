@@ -88,6 +88,7 @@ const I18N: Record<Lang, Record<string, string | string[]>> = {
     loginRequiredTitle:'ກະລຸນາເຂົ້າສູ່ລະບົບ', loginRequiredMsg:'ຕ້ອງເຂົ້າສູ່ລະບົບກ່ອນຈຶ່ງຈະຊື້ຫວຍໄດ້',
     purchaseFailed:'ຊື້ບໍ່ສຳເລັດ ກະລຸນາລອງໃໝ່',
     balanceLabel:'ຍອດເງິນທົດລອງ', insufficientBalance:'ຍອດເງິນທົດລອງບໍ່ພໍ ບໍ່ສາມາດຊື້ໄດ້',
+    maintenanceMode:'ລະບົບກຳລັງປິດປັບປຸງ ຂໍອະໄພໃນຄວາມບໍ່ສະດວກ', buyDisabled:'ການຊື້ຫວຍຖືກປິດຊົ່ວຄາວ',
   },
   th: {
     brand:'ก้อยเหล้า', tagline:'ตรวจหวยลาว • สุ่มดูดวง • สถิติ',
@@ -172,6 +173,7 @@ const I18N: Record<Lang, Record<string, string | string[]>> = {
     loginRequiredTitle:'กรุณาเข้าสู่ระบบ', loginRequiredMsg:'ต้องเข้าสู่ระบบก่อนจึงจะซื้อหวยได้',
     purchaseFailed:'ซื้อไม่สำเร็จ กรุณาลองใหม่',
     balanceLabel:'ยอดเงินทดลอง', insufficientBalance:'ยอดเงินทดลองไม่พอ ไม่สามารถซื้อได้',
+    maintenanceMode:'ระบบกำลังปิดปรับปรุง ขออภัยในความไม่สะดวก', buyDisabled:'การซื้อหวยถูกปิดชั่วคราว',
   },
   en: {
     brand:'KoyLao', tagline:'Lao lottery • lucky numbers • stats',
@@ -257,6 +259,7 @@ const I18N: Record<Lang, Record<string, string | string[]>> = {
     loginRequiredTitle:'Please sign in', loginRequiredMsg:'You need to sign in before buying a ticket',
     purchaseFailed:'Purchase failed, please try again',
     balanceLabel:'Trial balance', insufficientBalance:'Not enough trial balance to buy this',
+    maintenanceMode:'The system is under maintenance, sorry for the inconvenience', buyDisabled:'Buying is temporarily disabled',
   },
 };
 

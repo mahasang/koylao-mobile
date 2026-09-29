@@ -12,6 +12,8 @@ import type { Purchase, CartItem } from '../data/purchases';
 import { maxStakeFor, fmtDate } from '../utils/lottery';
 import { useI18n } from '../data/i18n';
 import { useAuth } from '../data/auth';
+import { fetchFlags } from '../data/flags';
+import type { Flags } from '../data/flags';
 import AccountModal from '../components/AccountModal';
 import { C } from '../theme';
 
@@ -37,6 +39,7 @@ export default function RiskBuyScreen() {
   const [receipt, setReceipt] = useState<Purchase | null>(null);
   const [accountOpen, setAccountOpen] = useState(false);
   const [buying, setBuying] = useState(false);
+  const [flags, setFlags] = useState<Flags | null>(null);
   const workdays = getWorkdays(7);
 
   const [randomOpen, setRandomOpen] = useState(false);
@@ -46,6 +49,7 @@ export default function RiskBuyScreen() {
   const [rAmt, setRAmt] = useState('1000');
 
   React.useEffect(() => { loadPurchases().then(setPurchases); }, [session?.user?.id]);
+  React.useEffect(() => { fetchFlags().then(setFlags); }, []);
 
   const setRDigits = (n: number) => {
     setRDigitsState(n);
@@ -133,7 +137,10 @@ export default function RiskBuyScreen() {
     setRandomOpen(false);
   };
 
+  const buyBlocked = !!flags && (flags.maintenance_mode || !flags.buy_enabled);
+
   const confirmPurchase = async () => {
+    if (buyBlocked) { Alert.alert('', t('buyDisabled') as string); return; }
     if (cart.length === 0) { Alert.alert('', t('cartEmptyWarn') as string); return; }
     if (!session) { setAccountOpen(true); return; }
     setBuying(true);
@@ -164,6 +171,12 @@ export default function RiskBuyScreen() {
 
   return (
     <ScrollView style={s.scroll} keyboardShouldPersistTaps="handled" contentContainerStyle={s.content}>
+      {flags?.maintenance_mode && (
+        <View style={s.maintenanceBar}>
+          <Text style={s.maintenanceBarTxt}>🛠️ {t('maintenanceMode') as string}</Text>
+        </View>
+      )}
+
       {session && (
         <View style={s.balanceBar}>
           <Text style={s.balanceBarLabel}>{t('balanceLabel') as string}</Text>
@@ -215,12 +228,16 @@ export default function RiskBuyScreen() {
         )}
 
         <View style={s.btnRow}>
-          <TouchableOpacity style={[s.primaryBtn, { flex: 1 }]} onPress={addToCart}>
+          <TouchableOpacity style={[s.primaryBtn, { flex: 1 }, buyBlocked && s.btnDisabled]}
+            onPress={addToCart} disabled={buyBlocked}>
             <Text style={s.primaryBtnTxt}>➕ {t('addBet')}</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={s.randomBtn} onPress={() => setRandomOpen(true)}>
-            <Text style={s.randomBtnTxt}>🎲 {t('riskRandomBtn')}</Text>
-          </TouchableOpacity>
+          {flags?.random_generator_enabled !== false && (
+            <TouchableOpacity style={[s.randomBtn, buyBlocked && s.btnDisabled]}
+              onPress={() => setRandomOpen(true)} disabled={buyBlocked}>
+              <Text style={s.randomBtnTxt}>🎲 {t('riskRandomBtn')}</Text>
+            </TouchableOpacity>
+          )}
         </View>
 
         {/* cart */}
@@ -249,13 +266,17 @@ export default function RiskBuyScreen() {
             <Text style={[s.muted, { textAlign: 'right', marginVertical: 8 }]}>
               {(t('stakeTotal') as string).replace('{v}', cartTotal.toLocaleString())}
             </Text>
-            <TouchableOpacity style={s.confirmPurchaseBtn} onPress={confirmPurchase} disabled={buying}>
+            <TouchableOpacity style={[s.confirmPurchaseBtn, buyBlocked && s.btnDisabled]}
+              onPress={confirmPurchase} disabled={buying || buyBlocked}>
               {buying
                 ? <ActivityIndicator color="#fff" size="small" />
                 : <Text style={s.primaryBtnTxt}>✅ {t('confirmPurchaseBtn')}</Text>}
             </TouchableOpacity>
             {!session && (
               <Text style={[s.muted, { textAlign: 'center', marginTop: 8 }]}>🔒 {t('loginRequiredMsg') as string}</Text>
+            )}
+            {buyBlocked && (
+              <Text style={[s.muted, { textAlign: 'center', marginTop: 8 }]}>⛔ {t('buyDisabled') as string}</Text>
             )}
           </View>
         )}
@@ -392,6 +413,9 @@ const s = StyleSheet.create({
     borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10, marginBottom: 14 },
   balanceBarLabel: { color: C.muted, fontSize: 12 },
   balanceBarValue: { color: C.accent, fontWeight: 'bold', fontSize: 16 },
+  maintenanceBar: { backgroundColor: '#7c2020', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, marginBottom: 14 },
+  maintenanceBarTxt: { color: '#fff', fontWeight: 'bold', fontSize: 13, textAlign: 'center' },
+  btnDisabled: { opacity: 0.4 },
   hint: { color: C.muted, fontSize: 13, lineHeight: 18, marginBottom: 14 },
   label: { color: C.muted, fontSize: 13, marginBottom: 6 },
   muted: { color: C.muted, fontSize: 12 },
