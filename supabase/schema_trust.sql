@@ -589,7 +589,7 @@ begin
   from jsonb_to_recordset(p_lines) as x(num text, amount bigint);
 
   -- Raises insufficient_balance (rolling everything above back) if the wallet can't cover it.
-  v_tx_id := public.wallet_apply(v_uid, -v_total, 'purchase', 'purchase', p_id, 'Ticket ' || v_ticket_no);
+  v_tx_id := public.wallet_apply(v_uid, -v_total, 'purchase', 'purchase', p_id, 'Bill ' || v_ticket_no);
 
   v_digest := public.lines_digest(p_id);
   update public.purchases
@@ -678,7 +678,7 @@ begin
       v_pay := public.payout_for(v_hit, r.amount);
       update public.purchase_lines set status = 'win', hit = v_hit, pay = v_pay where id = r.id;
       perform public.wallet_apply(r.user_id, v_pay, 'win_payout', 'purchase_line', r.id::text,
-        'Win ' || r.num || ' on ticket ' || coalesce(r.ticket_no, '-'));
+        'Win ' || r.num || ' on bill ' || coalesce(r.ticket_no, '-'));
       v_win_count := v_win_count + 1;
       v_win_amount := v_win_amount + v_pay;
     else
