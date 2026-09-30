@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, StyleSheet, Modal, StatusBar } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, StyleSheet, Modal, StatusBar, Image } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Clipboard from 'expo-clipboard';
 import type { Purchase, PurchaseLine, FullLine } from '../data/purchases';
+import { prizeId } from '../utils/lottery';
 import { fmtCloseTime } from '../data/rounds';
 import { ANIMAL_MAP, ANIMAL_EMOJI } from '../data/animals';
 import { getDraws, fetchLatestDraws } from '../data/lottery';
@@ -75,6 +76,19 @@ export default function TicketModal({ purchase, onClose, justSaved, closesAt, ba
 
   const total = purchase ? purchase.lines.reduce((sum, l) => sum + l.amount, 0) : 0;
 
+  // Prizes already paid into the wallet for this bill, grouped by how many digits matched.
+  const wins = purchase ? purchase.lines.filter(l => l.status === 'win') : [];
+  const winTotal = wins.reduce((sum, l) => sum + (l.pay ?? 0), 0);
+  const hasJackpot = wins.some(l => l.hit === 6);
+  const prizeGroups = Object.values(wins.reduce((acc: Record<number, { hit: number; count: number; pay: number }>, l) => {
+    const hit = l.hit ?? 0;
+    acc[hit] = acc[hit] ?? { hit, count: 0, pay: 0 };
+    acc[hit].count += 1;
+    acc[hit].pay += l.pay ?? 0;
+    return acc;
+  }, {})).sort((a, b) => b.hit - a.hit);
+  const prizeName = (hit?: number | null) => (hit ? (t(`p_${prizeId(hit)}`) as string) : '');
+
   const renderCell = (c: Cell | undefined, key: string) => {
     if (!c) return <View key={key} style={s.cellHalf} />;
     if (c.kind === 'full') {
@@ -92,9 +106,12 @@ export default function TicketModal({ purchase, onClose, justSaved, closesAt, ba
     const cut = !!l.requested && l.requested > l.amount;
     return (
       <View key={key} style={s.cellHalf}>
-        <View style={s.numBox}>
-          <Text style={[s.num, l.status === 'win' && s.numWin, l.status === 'lose' && s.numLose]}>{l.num}</Text>
-          <Text style={s.icon}>{animalIcon(l.num)}</Text>
+        <View>
+          <View style={s.numBox}>
+            <Text style={[s.num, l.status === 'win' && s.numWin, l.status === 'lose' && s.numLose]}>{l.num}</Text>
+            <Text style={s.icon}>{animalIcon(l.num)}</Text>
+          </View>
+          {l.status === 'win' && <Text style={s.prizeTag}>{prizeName(l.hit)}</Text>}
         </View>
         <View style={s.amtBox}>
           {l.status === 'win'
@@ -113,7 +130,35 @@ export default function TicketModal({ purchase, onClose, justSaved, closesAt, ba
         <ScrollView contentContainerStyle={{ paddingBottom: 24 + insets.bottom }}>
           {purchase && when && (
             <>
-              <LinearGradient colors={['#ff0000', '#9b0000']} style={[s.hero, { paddingTop: insets.top + 16 }]}>
+              {wins.length > 0 ? (
+                <LinearGradient colors={['#ffcf4a', '#e8801f', '#c94f13']} style={[s.hero, s.winHero, { paddingTop: insets.top + 16 }]}>
+                  <TouchableOpacity style={[s.heroClose, { top: insets.top + 8 }]} onPress={onClose} hitSlop={12}>
+                    <Text style={s.heroCloseTxt}>✕</Text>
+                  </TouchableOpacity>
+                  <Text style={[s.spark, { left: 28, top: insets.top + 70 }]}>✦</Text>
+                  <Text style={[s.spark, { right: 34, top: insets.top + 120, fontSize: 18 }]}>✧</Text>
+                  <Text style={[s.spark, { right: 70, top: insets.top + 36, fontSize: 14 }]}>✦</Text>
+                  <Image source={require('../../assets/icon.png')} style={s.avatar} />
+                  <Text style={s.congrats}>🎉 {t('winCongrats') as string} 🎉</Text>
+                  <View style={s.ribbon}>
+                    <Text style={s.ribbonTxt}>{(hasJackpot ? t('winJackpotMsg') : t('winYouWon')) as string}</Text>
+                  </View>
+                  <Text style={s.winLabel}>{t('winProfitBack') as string}</Text>
+                  <Text style={s.winAmt}>+{winTotal.toLocaleString()} ₭</Text>
+                  <Text style={s.winSub}>{t('winProfitSub') as string}</Text>
+                  <View style={[s.heroCols, { marginTop: 18, alignSelf: "stretch" }]}>
+                    <View>
+                      <Text style={s.heroLabel}>{t('billDrawsOn') as string}</Text>
+                      <Text style={s.heroDate}>{numericDate(purchase.drawDate)}</Text>
+                    </View>
+                    <View style={{ alignItems: 'flex-end' }}>
+                      <Text style={s.heroLabel}>{t('billResultOut') as string}</Text>
+                      <Text style={s.heroResult}>{resultNum ?? '—'}</Text>
+                    </View>
+                  </View>
+                </LinearGradient>
+              ) : (
+                <LinearGradient colors={['#ff0000', '#9b0000']} style={[s.hero, { paddingTop: insets.top + 16 }]}>
                 <TouchableOpacity style={[s.heroClose, { top: insets.top + 8 }]} onPress={onClose} hitSlop={12}>
                   <Text style={s.heroCloseTxt}>✕</Text>
                 </TouchableOpacity>
@@ -135,7 +180,8 @@ export default function TicketModal({ purchase, onClose, justSaved, closesAt, ba
                         </Text>}
                   </View>
                 </View>
-              </LinearGradient>
+                </LinearGradient>
+              )}
 
               <View style={[s.card, s.cardOverlap]}>
                 <View style={s.infoRow}>
@@ -150,6 +196,22 @@ export default function TicketModal({ purchase, onClose, justSaved, closesAt, ba
                   {closesAt ? <Text style={s.closes}>{t('ticketClosedAt') as string} {fmtCloseTime(closesAt)}</Text> : null}
                 </View>
                 <View style={s.solid} />
+
+                {prizeGroups.length > 0 && (
+                  <View style={s.prizeBox}>
+                    <Text style={s.prizeTitle}>🏆 {t('winBreakdown') as string}</Text>
+                    {prizeGroups.map(g => (
+                      <View key={g.hit} style={s.prizeRow}>
+                        <Text style={s.prizeName}>{prizeName(g.hit)} × {g.count}</Text>
+                        <Text style={s.prizePay}>+{g.pay.toLocaleString()} ₭</Text>
+                      </View>
+                    ))}
+                    <View style={s.prizeRow}>
+                      <Text style={s.prizeSum}>{t('winProfitBack') as string}</Text>
+                      <Text style={s.prizeSum}>+{winTotal.toLocaleString()} ₭</Text>
+                    </View>
+                  </View>
+                )}
 
                 <View style={s.row}>
                   {[0, 1].map(k => (
@@ -241,6 +303,22 @@ const s = StyleSheet.create({
   heroCheckTxt: { color: '#2e9e4f', fontSize: 20, fontWeight: 'bold' },
   heroMsg: { color: '#fff', fontSize: 17, fontWeight: 'bold', flexShrink: 1, lineHeight: 24 },
   heroCols: { flexDirection: 'row', justifyContent: 'space-between', gap: 12 },
+  winHero: { paddingBottom: 60, alignItems: 'center' },
+  spark: { position: 'absolute', color: '#fff', fontSize: 22, opacity: 0.9 },
+  avatar: { width: 76, height: 76, borderRadius: 38, borderWidth: 3, borderColor: '#fff', marginBottom: 10 },
+  congrats: { color: '#fff', fontSize: 17, fontWeight: 'bold', marginBottom: 12 },
+  ribbon: { backgroundColor: '#fff', borderRadius: 22, paddingHorizontal: 26, paddingVertical: 8, marginBottom: 12 },
+  ribbonTxt: { color: '#c94f13', fontSize: 18, fontWeight: 'bold' },
+  winLabel: { color: '#fff', fontSize: 14, opacity: 0.95 },
+  winAmt: { color: '#fff', fontSize: 38, fontWeight: 'bold', marginTop: 2 },
+  winSub: { color: '#fff', fontSize: 12, opacity: 0.9, marginTop: 2 },
+  prizeBox: { backgroundColor: '#fff8e1', borderWidth: 1, borderColor: '#f0c040', borderRadius: 12, padding: 12, marginBottom: 10 },
+  prizeTitle: { color: '#8a5a00', fontWeight: 'bold', fontSize: 14, marginBottom: 6 },
+  prizeRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 2, gap: 8 },
+  prizeName: { color: C.text, fontSize: 14, flexShrink: 1 },
+  prizePay: { color: '#2e9e4f', fontSize: 14, fontWeight: 'bold' },
+  prizeSum: { color: '#8a5a00', fontSize: 14, fontWeight: 'bold', marginTop: 4 },
+  prizeTag: { color: '#2e9e4f', fontSize: 11, marginTop: 1 },
   heroLabel: { color: '#fff', fontSize: 15, fontWeight: 'bold' },
   heroDate: { color: '#ffd600', fontSize: 20, fontWeight: 'bold', marginTop: 4 },
   heroResult: { color: '#ffd600', fontSize: 22, fontWeight: 'bold', marginTop: 4, letterSpacing: 4, fontFamily: 'Courier New' },
