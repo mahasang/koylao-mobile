@@ -139,7 +139,8 @@ const I18N: Record<Lang, Record<string, string | string[]>> = {
     set_hot2:'ເລກທ້າຍ 2 ໂຕ ອອກບ່ອຍ 10 ອັນດັບ', set_cold2:'ເລກທ້າຍ 2 ໂຕ ຫາຍດົນ 10 ອັນດັບ',
     set_doubles:'ເລກຊ້ຳ 00–99', set_prev:'ເລກທ້າຍ 2 ແລະ 3 ໂຕ ຂອງງວດກ່ອນ',
     setsApplied:'ເພີ່ມ {n} ເລກ (ຂ້າມ {skip} ເລກທີ່ມີແລ້ວ)', setsNothing:'ບໍ່ມີເລກໃໝ່ທີ່ເພີ່ມໄດ້ (ມີຄົບແລ້ວ)',
-    repeatBtn:'ຊື້ຊ້ຳ', repeatLoaded:'ໃສ່ {n} ເລກຈາກຕັ໋ວເກົ່າເຂົ້າຕະກ້າແລ້ວ (ຂ້າມ {skip} ເລກທີ່ມີແລ້ວ) — ກວດກ່ອນຊຳລະ',
+    repeatBtn:'ຊື້ຊ້ຳ', repeatLoaded:'ໃສ່ {n} ເລກຈາກຕັ໋ວເກົ່າເຂົ້າຕະກ້າສຳລັບງວດ {date} (ຂ້າມ {skip} ເລກທີ່ມີແລ້ວ) — ກວດກ່ອນຊຳລະ',
+    repeatNone:'ເລກຈາກຕັ໋ວນີ້ ຊື້ໄວ້ແລ້ວໃນທຸກງວດທີ່ເປີດຢູ່ (ເລກດຽວກັນຊື້ໄດ້ຄັ້ງດຽວຕໍ່ງວດ) ຈຶ່ງບໍ່ມີຫຍັງເພີ່ມເຂົ້າຕະກ້າ',
   },
   th: {
     brand:'ก้อยเหล้า', tagline:'ตรวจหวยลาว • สุ่มดูดวง • สถิติ',
@@ -275,7 +276,8 @@ const I18N: Record<Lang, Record<string, string | string[]>> = {
     set_hot2:'เลขท้าย 2 ตัว ออกบ่อย 10 อันดับ', set_cold2:'เลขท้าย 2 ตัว หายนาน 10 อันดับ',
     set_doubles:'เลขซ้ำ 00–99', set_prev:'เลขท้าย 2 และ 3 ตัว ของงวดก่อน',
     setsApplied:'เพิ่ม {n} เลข (ข้าม {skip} เลขที่มีแล้ว)', setsNothing:'ไม่มีเลขใหม่ที่เพิ่มได้ (มีครบแล้ว)',
-    repeatBtn:'ซื้อซ้ำ', repeatLoaded:'ใส่ {n} เลขจากตั๋วเก่าเข้าตะกร้าแล้ว (ข้าม {skip} เลขที่มีแล้ว) — ตรวจก่อนชำระ',
+    repeatBtn:'ซื้อซ้ำ', repeatLoaded:'ใส่ {n} เลขจากตั๋วเก่าเข้าตะกร้าสำหรับงวด {date} (ข้าม {skip} เลขที่มีแล้ว) — ตรวจก่อนชำระ',
+    repeatNone:'เลขจากตั๋วนี้ซื้อไว้แล้วในทุกงวดที่เปิดอยู่ (เลขเดียวกันซื้อได้ครั้งเดียวต่องวด) จึงไม่มีอะไรเพิ่มเข้าตะกร้า',
   },
   en: {
     brand:'KoyLao', tagline:'Lao lottery • lucky numbers • stats',
@@ -412,7 +414,8 @@ const I18N: Record<Lang, Record<string, string | string[]>> = {
     set_hot2:'Top 10 most frequent last-2 digits', set_cold2:'Top 10 longest-absent last-2 digits',
     set_doubles:'Doubles 00–99', set_prev:"Last draw's last 2 and 3 digits",
     setsApplied:'Added {n} numbers ({skip} already in your cart or bought)', setsNothing:'Nothing new to add (you already have them all)',
-    repeatBtn:'Buy again', repeatLoaded:'Put {n} numbers from the old ticket in your cart ({skip} skipped as already there) — review before paying',
+    repeatBtn:'Buy again', repeatLoaded:'Put {n} numbers from the old ticket in your cart for draw {date} ({skip} skipped as already there) — review before paying',
+    repeatNone:'Every number on this ticket is already bought in all open draws (a number can be bought once per draw), so nothing was added to your cart',
   },
 };
 

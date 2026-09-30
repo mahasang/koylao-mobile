@@ -130,10 +130,10 @@ export default function RiskBuyScreen() {
 
   // Adds numbers to the cart, skipping any already there or already bought
   // for this draw. Returns how many were added / skipped.
-  const mergeIntoCart = (items: CartItem[]) => {
+  const mergeIntoCart = (items: CartItem[], date: string = betDate) => {
     const have = new Set([
       ...cart.map(c => c.num),
-      ...purchases.filter(p => p.drawDate === betDate).flatMap(p => p.lines.map(l => l.num)),
+      ...purchases.filter(p => p.drawDate === date).flatMap(p => p.lines.map(l => l.num)),
     ]);
     const fresh: CartItem[] = [];
     items.forEach(i => { if (!have.has(i.num)) { have.add(i.num); fresh.push(i); } });
@@ -151,18 +151,31 @@ export default function RiskBuyScreen() {
 
   // "Buy again" from the history screen arrives as a route param. It only fills
   // the cart — nothing is bought until the customer confirms and pays.
+  // A number can be bought only once per draw, so the numbers go to the first
+  // open draw where none of them is already bought (usually not the draw the old
+  // ticket was for). With items already in the cart the draw is left alone.
   const repeatParam: CartItem[] | undefined = route.params?.repeat;
   React.useEffect(() => {
-    if (!repeatParam || !betDate || !purchasesLoaded) return;
+    if (!repeatParam || !rounds || !betDate || !purchasesLoaded) return;
     (async () => {
       await Promise.resolve();
-      const { added, skipped } = mergeIntoCart(repeatParam);
+      const nums = repeatParam.map(i => i.num);
+      const boughtOn = (d: string) =>
+        new Set(purchases.filter(p => p.drawDate === d).flatMap(p => p.lines.map(l => l.num)));
+      const open = rounds.filter(isRoundOpen);
+      const free = open.find(r => { const b = boughtOn(r.drawDate); return nums.every(n => !b.has(n)); });
+      const target = cart.length === 0 ? (free?.drawDate ?? betDate) : betDate;
+      if (target !== betDate) setBetDate(target);
+      const { added, skipped } = mergeIntoCart(repeatParam, target);
       nav.setParams({ repeat: undefined });
-      Alert.alert('', (t('repeatLoaded') as string).replace('{n}', String(added)).replace('{skip}', String(skipped)));
+      Alert.alert('', added === 0
+        ? t('repeatNone') as string
+        : (t('repeatLoaded') as string)
+          .replace('{n}', String(added)).replace('{skip}', String(skipped)).replace('{date}', fmtDate(target, lang)));
     })();
     // mergeIntoCart closes over the current cart/purchases on purpose: run once per repeat request.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [repeatParam, betDate, purchasesLoaded]);
+  }, [repeatParam, rounds, betDate, purchasesLoaded]);
 
   const removeFromCart = (num: string) => setCart(prev => prev.filter(c => c.num !== num));
 
