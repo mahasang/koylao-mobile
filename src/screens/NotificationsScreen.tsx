@@ -1,16 +1,16 @@
 import React, { useState, useCallback } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, StyleSheet } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, StyleSheet, Linking, Switch } from 'react-native';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { useNotifications } from '../data/notifications';
-import type { AppNotification } from '../data/notifications';
+import { describeNotification } from '../data/notificationText';
+import { hasPermission, canAskPermission, ensurePermission, getPrefs, setPrefs } from '../lib/deviceNotifications';
+import type { NotifPrefs } from '../lib/deviceNotifications';
 import { fmtDateTime } from '../data/purchases';
 import { fmtCloseTime, fmtCountdown, msUntilClose } from '../data/rounds';
 import { fmtDate } from '../utils/lottery';
 import { useI18n } from '../data/i18n';
 import { useAuth } from '../data/auth';
 import { C } from '../theme';
-
-const num = (v: any) => Number(v ?? 0).toLocaleString();
 
 export default function NotificationsScreen() {
   const { t, lang } = useI18n();
@@ -19,12 +19,18 @@ export default function NotificationsScreen() {
   const { items, closingSoon, refresh, markAllRead } = useNotifications();
   const [freshIds, setFreshIds] = useState<Set<number>>(new Set());
   const [, setTick] = useState(0);
+  const [phoneOn, setPhoneOn] = useState<boolean | null>(null);
+  const [canAsk, setCanAsk] = useState(false);
+  const [prefs, setPrefsState] = useState<NotifPrefs>({ closing: true, teaser: true });
 
   // Remember which ones were unread when the screen opened so they stay
   // highlighted, then mark everything read on the server.
   useFocusEffect(useCallback(() => {
     let alive = true;
     const iv = setInterval(() => setTick(n => n + 1), 1000);
+    hasPermission().then(setPhoneOn);
+    canAskPermission().then(setCanAsk);
+    getPrefs().then(setPrefsState);
     refresh().then(list => {
       if (!alive) return;
       setFreshIds(new Set((list ?? []).filter(n => !n.readAt).map(n => n.id)));
@@ -33,48 +39,50 @@ export default function NotificationsScreen() {
     return () => { alive = false; clearInterval(iv); };
   }, [refresh, markAllRead]));
 
-  const describe = (n: AppNotification): { icon: string; title: string; sub?: string; go?: string } | null => {
-    const d = n.data;
-    const fill = (k: string, vars: Record<string, string>) =>
-      Object.entries(vars).reduce((acc, [key, v]) => acc.replace(`{${key}}`, v), t(k) as string);
-    switch (n.kind) {
-      case 'purchase_ok':
-        return {
-          icon: '🎫', go: 'RiskHistory',
-          title: fill('notifPurchaseOk', { ticket: d.ticket_no }),
-          sub: fill('notifPurchaseOkSub', { n: num(d.line_count), total: num(d.total), date: fmtDate(d.draw_date, lang) }),
-        };
-      case 'draw_result': {
-        const won = Number(d.win_count) > 0;
-        return {
-          icon: won ? '🏆' : '📭', go: 'RiskHistory',
-          title: won
-            ? fill('notifDrawWin', { w: num(d.win_count), n: num(d.line_count), pay: num(d.pay) })
-            : fill('notifDrawLose', { ticket: d.ticket_no }),
-          sub: fill('notifDrawSub', { ticket: d.ticket_no, date: fmtDate(d.draw_date, lang) }),
-        };
-      }
-      case 'deposit_approved':
-        return { icon: '⬇️', go: 'Wallet', title: fill('notifDepositOk', { amount: num(d.amount) }), sub: d.note ?? undefined };
-      case 'withdraw_approved':
-        return { icon: '⬆️', go: 'Wallet', title: fill('notifWithdrawOk', { amount: num(d.amount) }), sub: d.note ?? undefined };
-      case 'request_rejected':
-        return {
-          icon: '❌', go: 'Wallet',
-          title: fill(d.kind === 'deposit' ? 'notifRejDeposit' : 'notifRejWithdraw', { amount: num(d.amount) }),
-          sub: d.note ?? undefined,
-        };
-      default:
-        return null;
-    }
-  };
-
   const open = (screen?: string) => {
     if (screen) nav.navigate('Tabs', { screen: 'Risk', params: { screen } });
   };
 
+  const changePref = async (key: keyof NotifPrefs, value: boolean) => {
+    const next = { ...prefs, [key]: value };
+    setPrefsState(next);
+    await setPrefs(next);
+    refresh();   // reschedules (or cancels) the phone reminders right away
+  };
+
+  const enablePhone = async () => {
+    if (canAsk) {
+      setPhoneOn(await ensurePermission());
+      setCanAsk(await canAskPermission());
+    } else {
+      Linking.openSettings();
+    }
+  };
+
   return (
     <ScrollView style={s.scroll} contentContainerStyle={s.content}>
+      {phoneOn === false && (
+        <TouchableOpacity style={[s.card, s.enable]} onPress={enablePhone}>
+          <Text style={s.icon}>📲</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={s.title}>{t('notifEnablePhone') as string}</Text>
+            <Text style={s.sub}>{(canAsk ? t('notifEnableBtn') : t('notifOpenSettings')) as string}</Text>
+          </View>
+        </TouchableOpacity>
+      )}
+      {phoneOn === true && <Text style={s.on}>✅ {t('notifPhoneOn') as string}</Text>}
+
+      <View style={s.prefs}>
+        <Text style={s.prefsTitle}>{t('notifPrefsTitle') as string}</Text>
+        <View style={s.prefRow}>
+          <Text style={s.prefTxt}>{t('notifPrefClosing') as string}</Text>
+          <Switch value={prefs.closing} onValueChange={v => changePref('closing', v)} />
+        </View>
+        <View style={s.prefRow}>
+          <Text style={s.prefTxt}>{t('notifPrefTeaser') as string}</Text>
+          <Switch value={prefs.teaser} onValueChange={v => changePref('teaser', v)} />
+        </View>
+      </View>
       {closingSoon && (
         <TouchableOpacity style={[s.card, s.soon]} onPress={() => nav.navigate('Tabs', { screen: 'Risk', params: { screen: 'RiskBuy' } })}>
           <Text style={s.icon}>⏰</Text>
@@ -92,11 +100,11 @@ export default function NotificationsScreen() {
       )}
 
       {session && items.map(n => {
-        const info = describe(n);
+        const info = describeNotification(n, t, lang);
         if (!info) return null;
         const fresh = freshIds.has(n.id);
         return (
-          <TouchableOpacity key={n.id} style={[s.card, fresh && s.fresh]} onPress={() => open(info.go)}>
+          <TouchableOpacity key={n.id} style={[s.card, fresh && s.fresh, info.special && s.prize]} onPress={() => open(info.go)}>
             <Text style={s.icon}>{info.icon}</Text>
             <View style={{ flex: 1 }}>
               <Text style={s.title}>{info.title}</Text>
@@ -121,6 +129,13 @@ const s = StyleSheet.create({
   content: { padding: 16, paddingBottom: 40 },
   card: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: C.card, borderRadius: 14,
     padding: 14, marginBottom: 10 },
+  enable: { backgroundColor: C.accent + '14', borderWidth: 1, borderColor: C.accent },
+  on: { color: '#2e9e4f', fontSize: 12, fontWeight: 'bold', textAlign: 'center', marginBottom: 10 },
+  prize: { backgroundColor: '#f0c04026', borderWidth: 1.5, borderColor: '#e8a020' },
+  prefs: { backgroundColor: C.card, borderRadius: 14, padding: 14, marginBottom: 12 },
+  prefsTitle: { color: C.text, fontWeight: 'bold', fontSize: 13, marginBottom: 6 },
+  prefRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, paddingVertical: 4 },
+  prefTxt: { flex: 1, color: C.muted, fontSize: 13 },
   soon: { backgroundColor: '#f0c04026', borderWidth: 1, borderColor: '#e8a020' },
   fresh: { borderWidth: 1, borderColor: C.accent },
   icon: { fontSize: 26 },

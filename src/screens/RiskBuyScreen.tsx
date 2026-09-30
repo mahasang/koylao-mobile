@@ -14,6 +14,7 @@ import { maxStakeFor, fmtDate } from '../utils/lottery';
 import { useI18n } from '../data/i18n';
 import { useAuth } from '../data/auth';
 import { fetchFlags } from '../data/flags';
+import { ensurePermission } from '../lib/deviceNotifications';
 import type { Flags } from '../data/flags';
 import AccountModal from '../components/AccountModal';
 import TicketModal from '../components/TicketModal';
@@ -246,6 +247,7 @@ export default function RiskBuyScreen() {
     setBuyMsg(null);
     setReceipt({ purchase, closesAt: ticket.closesAt, balanceAfter: ticket.balanceAfter });
     refreshStats().catch(() => {});
+    ensurePermission(); // first purchase is a natural moment to offer phone alerts
   };
 
   const errorText = (code: string): string => {

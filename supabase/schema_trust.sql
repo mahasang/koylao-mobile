@@ -16,7 +16,8 @@
 --      profiles.balance (SQL editor, dashboard bug, anything) is refused.
 --   5. Deposit / withdraw requests with admin approval, all on the ledger.
 --   6. In-app notifications written by the server itself (ticket saved,
---      draw settled, deposit/withdraw decided).
+--      draw settled, result announced, deposit/withdraw decided, someone
+--      used your referral code).
 
 -- ============================================================
 -- Shared helpers
@@ -371,6 +372,8 @@ begin
 
   if referrer_id is not null then
     update public.profiles set credits = credits + referrer_commission where id = referrer_id;
+    -- Tell the referrer someone used their code and what they earned (no details about the new user).
+    perform public.notify(referrer_id, 'referral_joined', jsonb_build_object('credits', referrer_commission));
   end if;
 
   return new;
@@ -747,10 +750,20 @@ language plpgsql
 security definer
 set search_path = public
 as $$
+declare
+  v_num text;
 begin
   update public.draws
   set status = 'confirmed', confirmed_at = now(), confirmed_by = p_actor
-  where draw_date = p_draw_date and status = 'pending';
+  where draw_date = p_draw_date and status = 'pending'
+  returning num into v_num;
+
+  -- Announce the confirmed number to every member, once per draw.
+  if v_num is not null then
+    insert into public.notifications (user_id, kind, data)
+    select id, 'draw_out', jsonb_build_object('draw_date', p_draw_date, 'num', v_num)
+    from public.profiles;
+  end if;
 end;
 $$;
 revoke all on function public.confirm_draw_internal(date, uuid) from public, anon, authenticated;

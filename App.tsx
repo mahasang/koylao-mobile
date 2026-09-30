@@ -1,7 +1,8 @@
 import React from 'react';
 import { StatusBar, Text } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { NavigationContainer } from '@react-navigation/native';
+import { NavigationContainer, useNavigationContainerRef } from '@react-navigation/native';
+import * as Notifications from 'expo-notifications';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { I18nProvider, useI18n } from './src/data/i18n';
@@ -90,13 +91,26 @@ function Root() {
 }
 
 export default function App() {
+  const navRef = useNavigationContainerRef<any>();
+
+  // Tapping a phone notification opens the screen it is about.
+  React.useEffect(() => {
+    const sub = Notifications.addNotificationResponseReceivedListener(resp => {
+      const data = resp.notification.request.content.data as { screen?: string; tab?: string } | undefined;
+      if (!navRef.isReady()) return;
+      if (data?.tab) navRef.navigate('Tabs', { screen: data.tab });
+      else navRef.navigate('Tabs', { screen: 'Risk', params: { screen: data?.screen ?? 'RiskHome' } });
+    });
+    return () => sub.remove();
+  }, [navRef]);
+
   return (
     <SafeAreaProvider>
       <I18nProvider>
         <AuthProvider>
           <NotificationsProvider>
             <StatusBar barStyle="dark-content" backgroundColor={C.bg} />
-            <NavigationContainer>
+            <NavigationContainer ref={navRef}>
               <Root />
             </NavigationContainer>
           </NotificationsProvider>
