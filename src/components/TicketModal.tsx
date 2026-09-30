@@ -1,10 +1,12 @@
 import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, StyleSheet, Modal } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, StyleSheet, Modal, StatusBar } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Clipboard from 'expo-clipboard';
 import type { Purchase, PurchaseLine, FullLine } from '../data/purchases';
 import { fmtCloseTime } from '../data/rounds';
 import { ANIMAL_MAP, ANIMAL_EMOJI } from '../data/animals';
+import { getDraws, fetchLatestDraws } from '../data/lottery';
 import { fmtDate } from '../utils/lottery';
 import { useI18n } from '../data/i18n';
 import { C } from '../theme';
@@ -39,6 +41,14 @@ export default function TicketModal({ purchase, onClose, justSaved, closesAt, ba
   const { t, lang } = useI18n();
   const insets = useSafeAreaInsets();
   const [copied, setCopied] = useState(false);
+  const [, setDrawsTick] = useState(0);
+
+  // The result may have come out since the app last loaded results.
+  const drawDate = purchase?.drawDate;
+  React.useEffect(() => {
+    if (!drawDate) return;
+    fetchLatestDraws().then(() => setDrawsTick(n => n + 1)).catch(() => {});
+  }, [drawDate]);
 
   const copy = async () => {
     if (!purchase?.ticketNo) return;
@@ -48,6 +58,9 @@ export default function TicketModal({ purchase, onClose, justSaved, closesAt, ba
   };
 
   const when = purchase ? new Date(purchase.createdAt) : null;
+  const draw = purchase ? getDraws().find(d => d.date === purchase.drawDate) : undefined;
+  const resultNum = draw && draw.status !== 'pending' ? draw.num : null;   // bundled history has no status: already final
+  const numericDate = (iso: string) => { const [y, m, d] = iso.split('-'); return `${d}/${m}/${y}`; };
   const fullLines = purchase?.fullLines ?? [];
   const partial = purchase ? purchase.lines.filter(l => l.requested && l.requested > l.amount) : [];
 
@@ -95,49 +108,48 @@ export default function TicketModal({ purchase, onClose, justSaved, closesAt, ba
   };
 
   return (
-    <Modal visible={!!purchase} animationType="slide" onRequestClose={onClose}>
-      <View style={[s.screen, { paddingTop: insets.top }]}>
-        <View style={s.header}>
-          <TouchableOpacity onPress={onClose} hitSlop={12}><Text style={s.back}>←</Text></TouchableOpacity>
-          <Text style={s.headerTitle}>{(justSaved ? t('billPaidTitle') : t('ticketTitle')) as string}</Text>
-          <View style={{ width: 28 }} />
-        </View>
-
+    <Modal visible={!!purchase} animationType="slide" statusBarTranslucent onRequestClose={onClose}>
+      <View style={s.screen}>
+        <StatusBar barStyle="light-content" />
         <ScrollView contentContainerStyle={{ paddingBottom: 24 + insets.bottom }}>
           {purchase && when && (
             <>
-              <View style={s.checkRing}><Text style={s.checkMark}>✓</Text></View>
-              <Text style={s.boughtAt}>
-                {t('billBoughtAt') as string}: {p2(when.getDate())}/{p2(when.getMonth() + 1)}/{when.getFullYear()} {p2(when.getHours())}:{p2(when.getMinutes())}:{p2(when.getSeconds())}
-              </Text>
-
-              <View style={s.card}>
-                <Text style={s.brand}>{t('brand') as string}  |  {t('ticketTitle') as string}</Text>
-                <View style={s.dashed} />
-
-                <View style={s.circles}>
-                  <View style={s.circleBox}>
-                    <Text style={[s.cLabel, { color: '#e8761a' }]}>{t('billDateLbl') as string}</Text>
-                    <View style={[s.circle, { borderColor: '#e8761a' }]}>
-                      <Text style={[s.cBig, { color: '#e8761a' }]}>{p2(when.getDate())}</Text>
-                      <Text style={[s.cBig, { color: '#e8761a' }]}>{p2(when.getMonth() + 1)}</Text>
-                    </View>
+              <LinearGradient colors={['#ff0000', '#9b0000']} style={[s.hero, { paddingTop: insets.top + 16 }]}>
+                <TouchableOpacity style={[s.heroClose, { top: insets.top + 8 }]} onPress={onClose} hitSlop={12}>
+                  <Text style={s.heroCloseTxt}>✕</Text>
+                </TouchableOpacity>
+                <View style={s.heroMsgRow}>
+                  <View style={s.heroCheck}><Text style={s.heroCheckTxt}>✓</Text></View>
+                  <Text style={s.heroMsg}>{(justSaved ? t('billLuckMsg') : t('ticketTitle')) as string}</Text>
+                </View>
+                <View style={s.heroCols}>
+                  <View>
+                    <Text style={s.heroLabel}>{t('billDrawsOn') as string}</Text>
+                    <Text style={s.heroDate}>{numericDate(purchase.drawDate)}</Text>
                   </View>
-                  <View style={s.circleBox}>
-                    <Text style={[s.cLabel, { color: '#1a5fb4' }]}>{t('billTimeLbl') as string}</Text>
-                    <View style={[s.circle, { borderColor: '#1a5fb4' }]}>
-                      <Text style={[s.cBig, { color: '#1a5fb4' }]}>{p2(when.getHours())}</Text>
-                      <Text style={[s.cBig, { color: '#1a5fb4' }]}>{p2(when.getMinutes())}</Text>
-                    </View>
-                  </View>
-                  <View style={s.circleBox}>
-                    <Text style={[s.cLabel, { color: '#2e9e4f' }]}>{t('billStatusDone') as string}</Text>
-                    <View style={[s.circle, { borderColor: '#2e9e4f' }]}><Text style={[s.cBig, { color: '#2e9e4f', fontSize: 34 }]}>✓</Text></View>
+                  <View style={{ alignItems: 'flex-end', flexShrink: 1 }}>
+                    <Text style={s.heroLabel}>{t('billResultOut') as string}</Text>
+                    {resultNum
+                      ? <Text style={s.heroResult}>{resultNum}</Text>
+                      : <Text style={s.heroPending}>
+                          {(draw?.status === 'pending' ? t('billResultPending') : t('billResultNotYet')) as string}
+                        </Text>}
                   </View>
                 </View>
+              </LinearGradient>
 
-                <Text style={s.round}>{t('billRoundDate') as string}: {fmtDate(purchase.drawDate, lang)}</Text>
-                {closesAt ? <Text style={s.closes}>{t('ticketClosedAt') as string} {fmtCloseTime(closesAt)}</Text> : null}
+              <View style={[s.card, s.cardOverlap]}>
+                <View style={s.infoRow}>
+                  <Text style={s.infoTxt}>
+                    {t('billBoughtAt') as string}: {p2(when.getHours())}:{p2(when.getMinutes())}:{p2(when.getSeconds())} {p2(when.getDate())}/{p2(when.getMonth() + 1)}/{when.getFullYear()}
+                  </Text>
+                  <Text style={s.infoOk}>✓ {t('billPaidOk') as string}</Text>
+                </View>
+                <View style={s.dashed} />
+                <View style={s.infoRow}>
+                  <Text style={s.infoTxt}>{t('billRoundDate') as string}: {numericDate(purchase.drawDate)}</Text>
+                  {closesAt ? <Text style={s.closes}>{t('ticketClosedAt') as string} {fmtCloseTime(closesAt)}</Text> : null}
+                </View>
                 <View style={s.solid} />
 
                 <View style={s.row}>
@@ -219,22 +231,28 @@ const s = StyleSheet.create({
   screen: { flex: 1, backgroundColor: C.bg },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16,
     paddingVertical: 14, backgroundColor: C.card, borderBottomWidth: 1, borderBottomColor: C.border },
-  back: { fontSize: 24, color: C.accent, width: 28 },
-  headerTitle: { color: C.accent, fontSize: 18, fontWeight: 'bold' },
   checkRing: { alignSelf: 'center', width: 120, height: 120, borderRadius: 60, borderWidth: 6, borderColor: '#2e9e4f',
     alignItems: 'center', justifyContent: 'center', marginTop: 16, backgroundColor: C.card },
-  checkMark: { color: '#2e9e4f', fontSize: 72, fontWeight: 'bold', lineHeight: 84 },
-  boughtAt: { textAlign: 'center', color: C.text, fontSize: 16, marginTop: 12, marginBottom: 14 },
-  card: { backgroundColor: C.card, marginHorizontal: 12, padding: 14, borderWidth: 1, borderColor: C.border, borderRadius: 4 },
-  brand: { textAlign: 'center', color: C.text, fontSize: 14 },
+  hero: { paddingHorizontal: 20, paddingBottom: 54 },
+  heroClose: { position: 'absolute', right: 16, width: 30, height: 30, borderRadius: 15, backgroundColor: '#ffffff33',
+    alignItems: 'center', justifyContent: 'center', zIndex: 2 },
+  heroCloseTxt: { color: '#fff', fontSize: 14, fontWeight: 'bold' },
+  heroMsgRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, paddingHorizontal: 36, marginBottom: 22 },
+  heroCheck: { width: 34, height: 34, borderRadius: 17, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center' },
+  heroCheckTxt: { color: '#2e9e4f', fontSize: 20, fontWeight: 'bold' },
+  heroMsg: { color: '#fff', fontSize: 17, fontWeight: 'bold', flexShrink: 1, lineHeight: 24 },
+  heroCols: { flexDirection: 'row', justifyContent: 'space-between', gap: 12 },
+  heroLabel: { color: '#fff', fontSize: 15, fontWeight: 'bold' },
+  heroDate: { color: '#ffd600', fontSize: 20, fontWeight: 'bold', marginTop: 4 },
+  heroResult: { color: '#ffd600', fontSize: 22, fontWeight: 'bold', marginTop: 4, letterSpacing: 4, fontFamily: 'Courier New' },
+  heroPending: { color: '#ffffffcc', fontSize: 13, marginTop: 6, textAlign: 'right' },
+  card: { backgroundColor: C.card, marginHorizontal: 12, padding: 14, borderWidth: 1, borderColor: C.border, borderRadius: 8 },
+  cardOverlap: { marginTop: -34 },
+  infoRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8 },
+  infoTxt: { color: C.text, fontSize: 14, flexShrink: 1 },
+  infoOk: { color: '#2e9e4f', fontSize: 14, fontWeight: 'bold' },
   dashed: { borderBottomWidth: 1, borderStyle: 'dashed', borderColor: C.muted, marginVertical: 8 },
   solid: { height: 1, backgroundColor: C.text, opacity: 0.8, marginVertical: 6 },
-  circles: { flexDirection: 'row', justifyContent: 'space-around', alignItems: 'flex-end', marginVertical: 8 },
-  circleBox: { alignItems: 'center', gap: 4 },
-  cLabel: { fontSize: 13, fontWeight: 'bold' },
-  circle: { width: 84, height: 84, borderRadius: 42, borderWidth: 3, alignItems: 'center', justifyContent: 'center' },
-  cBig: { fontSize: 22, fontWeight: 'bold', lineHeight: 26 },
-  round: { textAlign: 'center', color: C.text, fontSize: 17, fontWeight: 'bold', marginTop: 10 },
   closes: { textAlign: 'center', color: C.muted, fontSize: 12, marginTop: 2, marginBottom: 4 },
   thRow: { flexDirection: 'row', alignItems: 'center' },
   th: { color: C.text, fontSize: 15 },
