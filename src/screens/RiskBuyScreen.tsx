@@ -1,20 +1,24 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useCallback } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, ScrollView,
   StyleSheet, Alert, Keyboard, Modal, Platform, ActivityIndicator,
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute } from '@react-navigation/native';
 import {
-  loadPurchases, evalPurchases, buildPurchase, insertPurchase, fmtDateTime, overallLineIcon,
-  localDateStr, nextWorkday, getWorkdays,
+  loadPurchases, fetchPurchase, createPurchase, newPurchaseId, purchaseErrorCode,
 } from '../data/purchases';
-import type { Purchase, CartItem } from '../data/purchases';
+import type { Purchase, CartItem, Ticket } from '../data/purchases';
+import { fetchRounds, isRoundOpen, msUntilClose, fmtCountdown, fmtCloseTime } from '../data/rounds';
+import type { Round } from '../data/rounds';
 import { maxStakeFor, fmtDate } from '../utils/lottery';
 import { useI18n } from '../data/i18n';
 import { useAuth } from '../data/auth';
 import { fetchFlags } from '../data/flags';
 import type { Flags } from '../data/flags';
 import AccountModal from '../components/AccountModal';
+import TicketModal from '../components/TicketModal';
+import NumberSetsModal from '../components/NumberSetsModal';
+import { getDraws } from '../data/lottery';
 import { C } from '../theme';
 
 const AMOUNT_STEP = 1000;
@@ -31,16 +35,26 @@ export default function RiskBuyScreen() {
   const { t, lang } = useI18n();
   const { session, stats, refreshStats } = useAuth();
   const nav = useNavigation<any>();
+  const route = useRoute<any>();
   const [purchases, setPurchases] = useState<Purchase[]>([]);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [betNum, setBetNum] = useState('');
   const [betAmt, setBetAmt] = useState('1000');
-  const [betDate, setBetDate] = useState(localDateStr(nextWorkday()));
-  const [receipt, setReceipt] = useState<Purchase | null>(null);
+  const [betDate, setBetDate] = useState('');
+  const [rounds, setRounds] = useState<Round[] | null>(null);
+  const [roundsFailed, setRoundsFailed] = useState(false);
+  const [, setTick] = useState(0);
+  const [receipt, setReceipt] = useState<{ purchase: Purchase; closesAt: string | null; balanceAfter: number | null } | null>(null);
+  const [reviewOpen, setReviewOpen] = useState(false);
+  const [buyMsg, setBuyMsg] = useState<string | null>(null);
   const [accountOpen, setAccountOpen] = useState(false);
   const [buying, setBuying] = useState(false);
   const [flags, setFlags] = useState<Flags | null>(null);
-  const workdays = getWorkdays(7);
+  const [setsOpen, setSetsOpen] = useState(false);
+  const [purchasesLoaded, setPurchasesLoaded] = useState(false);
+  // Idempotency key of the purchase attempt in flight. Kept across retries so
+  // a dropped connection can never charge twice; dropped when the cart changes.
+  const pendingIdRef = useRef<string | null>(null);
 
   const [randomOpen, setRandomOpen] = useState(false);
   const [rDigits, setRDigitsState] = useState(6);
@@ -48,8 +62,32 @@ export default function RiskBuyScreen() {
   const [rQty, setRQty] = useState('10');
   const [rAmt, setRAmt] = useState('1000');
 
-  React.useEffect(() => { loadPurchases().then(setPurchases); }, [session?.user?.id]);
+  React.useEffect(() => {
+    loadPurchases().then(list => { setPurchases(list); setPurchasesLoaded(true); });
+  }, [session?.user?.id]);
   React.useEffect(() => { fetchFlags().then(setFlags); }, []);
+  React.useEffect(() => { pendingIdRef.current = null; }, [cart, betDate]);
+
+  const loadRounds = useCallback(() => (
+    fetchRounds()
+      .then(list => {
+        setRoundsFailed(false);
+        setRounds(list);
+        setBetDate(cur => {
+          const stillOpen = list.find(r => r.drawDate === cur && isRoundOpen(r));
+          return stillOpen ? cur : (list.find(isRoundOpen)?.drawDate ?? '');
+        });
+      })
+      .catch(() => setRoundsFailed(true))
+  ), []);
+  React.useEffect(() => { loadRounds(); }, [loadRounds]);
+  React.useEffect(() => {
+    const iv = setInterval(() => setTick(n => n + 1), 1000);
+    return () => clearInterval(iv);
+  }, []);
+
+  const round = rounds?.find(r => r.drawDate === betDate) ?? null;
+  const roundOpen = !!round && isRoundOpen(round);
 
   const setRDigits = (n: number) => {
     setRDigitsState(n);
@@ -89,6 +127,42 @@ export default function RiskBuyScreen() {
     setCart(prev => [{ num, amount }, ...prev]);
     setBetNum('');
   };
+
+  // Adds numbers to the cart, skipping any already there or already bought
+  // for this draw. Returns how many were added / skipped.
+  const mergeIntoCart = (items: CartItem[]) => {
+    const have = new Set([
+      ...cart.map(c => c.num),
+      ...purchases.filter(p => p.drawDate === betDate).flatMap(p => p.lines.map(l => l.num)),
+    ]);
+    const fresh: CartItem[] = [];
+    items.forEach(i => { if (!have.has(i.num)) { have.add(i.num); fresh.push(i); } });
+    if (fresh.length > 0) setCart(prev => [...fresh, ...prev]);
+    return { added: fresh.length, skipped: items.length - fresh.length };
+  };
+
+  const applySet = (items: CartItem[]) => {
+    const { added, skipped } = mergeIntoCart(items);
+    Alert.alert('', added === 0
+      ? t('setsNothing') as string
+      : (t('setsApplied') as string).replace('{n}', String(added)).replace('{skip}', String(skipped)));
+    if (added > 0) setSetsOpen(false);
+  };
+
+  // "Buy again" from the history screen arrives as a route param. It only fills
+  // the cart — nothing is bought until the customer confirms and pays.
+  const repeatParam: CartItem[] | undefined = route.params?.repeat;
+  React.useEffect(() => {
+    if (!repeatParam || !betDate || !purchasesLoaded) return;
+    (async () => {
+      await Promise.resolve();
+      const { added, skipped } = mergeIntoCart(repeatParam);
+      nav.setParams({ repeat: undefined });
+      Alert.alert('', (t('repeatLoaded') as string).replace('{n}', String(added)).replace('{skip}', String(skipped)));
+    })();
+    // mergeIntoCart closes over the current cart/purchases on purpose: run once per repeat request.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [repeatParam, betDate, purchasesLoaded]);
 
   const removeFromCart = (num: string) => setCart(prev => prev.filter(c => c.num !== num));
 
@@ -137,27 +211,91 @@ export default function RiskBuyScreen() {
     setRandomOpen(false);
   };
 
-  const buyBlocked = !!flags && (flags.maintenance_mode || !flags.buy_enabled);
+  const flagsBlocked = !!flags && (flags.maintenance_mode || !flags.buy_enabled);
+  const buyBlocked = flagsBlocked || !roundOpen;
+  const cartTotal = cart.reduce((sum, c) => sum + c.amount, 0);
 
-  const confirmPurchase = async () => {
-    if (buyBlocked) { Alert.alert('', t('buyDisabled') as string); return; }
+  // Step 1: nothing is charged here — just show the customer exactly what
+  // will happen and when the draw closes.
+  const openReview = () => {
+    if (flagsBlocked) { Alert.alert('', t('buyDisabled') as string); return; }
+    if (!roundOpen) { Alert.alert('', t('errRoundClosed') as string); return; }
     if (cart.length === 0) { Alert.alert('', t('cartEmptyWarn') as string); return; }
     if (!session) { setAccountOpen(true); return; }
+    setBuyMsg(null);
+    setReviewOpen(true);
+  };
+
+  const showSaved = (purchase: Purchase, ticket: Ticket) => {
+    setPurchases(prev => [purchase, ...prev.filter(p => p.id !== purchase.id)]);
+    setCart([]);
+    setReviewOpen(false);
+    setBuyMsg(null);
+    setReceipt({ purchase, closesAt: ticket.closesAt, balanceAfter: ticket.balanceAfter });
+    refreshStats().catch(() => {});
+  };
+
+  const errorText = (code: string): string => {
+    switch (code) {
+      case 'insufficient_balance': return t('insufficientBalance') as string;
+      case 'round_closed': return t('errRoundClosed') as string;
+      case 'invalid_draw_date': return t('errInvalidDate') as string;
+      case 'buying_disabled': return t('buyDisabled') as string;
+      case 'duplicate_number': return t('betDup') as string;
+      case 'invalid_line': case 'empty_cart': return t('betBad') as string;
+      case 'too_many_lines': return t('errTooMany') as string;
+      case 'not_signed_in': return t('errNotSignedIn') as string;
+      default: return t('purchaseFailed') as string;
+    }
+  };
+
+  // Step 2: the ticket only exists once create_purchase() has returned it
+  // (money deducted + ticket saved in one server transaction). We then read
+  // it back from the database before showing any success screen.
+  const payNow = async () => {
+    if (buying) return;
+    const id = pendingIdRef.current ?? (pendingIdRef.current = newPurchaseId());
     setBuying(true);
+    setBuyMsg(null);
     try {
-      const purchase = buildPurchase(betDate, cart, t('demoChannel') as string);
-      await insertPurchase(purchase);
-      await refreshStats();
-      const { next } = await evalPurchases(purchases);
-      setPurchases(next);
-      setCart([]);
-      const settled = next.find(p => p.id === purchase.id) ?? purchase;
-      setReceipt(settled);
+      const ticket = await createPurchase(id, betDate, cart, t('demoChannel') as string);
+      let saved: Purchase | null = null;
+      try { saved = await fetchPurchase(id); } catch { /* fall back to the server's own ticket data below */ }
+      if (saved?.ticketNo !== ticket.ticketNo) {
+        // The server confirmed the ticket; the read-back just isn't available.
+        // Show what the server issued (its ticket no./code) with the cart we sent.
+        saved = {
+          id, billNo: ticket.ticketNo, refNo: '—', channel: t('demoChannel') as string,
+          drawDate: ticket.drawDate, createdAt: ticket.createdAt, ticketNo: ticket.ticketNo,
+          verifyCode: ticket.verifyCode, lines: cart.map(c => ({ ...c, status: 'pending' as const })),
+        };
+      }
+      showSaved(saved, ticket);
     } catch (e: any) {
-      const msg = e?.message?.includes('insufficient_balance')
-        ? t('insufficientBalance') as string
-        : t('purchaseFailed') as string;
-      Alert.alert('', msg);
+      const code = purchaseErrorCode(e);
+      if (code === 'unknown') {
+        // We can't tell whether the server saved it (e.g. connection dropped).
+        // Look before saying anything; the same id makes a retry safe either way.
+        try {
+          const saved = await fetchPurchase(id);
+          if (saved?.ticketNo) {
+            showSaved(saved, {
+              id, ticketNo: saved.ticketNo, verifyCode: saved.verifyCode ?? '', drawDate: saved.drawDate,
+              closesAt: round?.closesAt ?? null, createdAt: saved.createdAt, lineCount: saved.lines.length,
+              total: saved.lines.reduce((sum, l) => sum + l.amount, 0), balanceAfter: null, replayed: true,
+            });
+            setBuying(false);
+            return;
+          }
+          setBuyMsg(t('errUnknownNoTicket') as string);
+        } catch {
+          setBuyMsg(t('errUnknownCheck') as string);
+        }
+      } else {
+        pendingIdRef.current = null;
+        if (code === 'round_closed') loadRounds();
+        setBuyMsg(errorText(code));
+      }
     }
     setBuying(false);
   };
@@ -166,8 +304,6 @@ export default function RiskBuyScreen() {
     setReceipt(null);
     nav.goBack();
   };
-
-  const cartTotal = cart.reduce((sum, c) => sum + c.amount, 0);
 
   return (
     <ScrollView style={s.scroll} keyboardShouldPersistTaps="handled" contentContainerStyle={s.content}>
@@ -187,17 +323,47 @@ export default function RiskBuyScreen() {
       <View style={s.card}>
         <Text style={s.hint}>{t('riskHint') as string}</Text>
 
-        {/* workday picker */}
+        {/* draw picker — closing times come from the server */}
         <Text style={s.label}>{t('betDraw')}</Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
-          {workdays.map(d => (
-            <TouchableOpacity key={d} style={[s.dateChip, betDate === d && s.dateChipOn]} onPress={() => changeBetDate(d)}>
-              <Text style={[s.dateChipTxt, betDate === d && s.dateChipOnTxt]}>
-                {fmtDate(d, lang, { weekday: 'short', day: 'numeric', month: 'short' })}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
+        {roundsFailed && (
+          <View style={s.roundErr}>
+            <Text style={s.roundErrTxt}>⚠️ {t('roundsLoadFail') as string}</Text>
+            <TouchableOpacity onPress={loadRounds}><Text style={s.roundErrRetry}>{t('retryBtn') as string}</Text></TouchableOpacity>
+          </View>
+        )}
+        {!rounds && !roundsFailed && <ActivityIndicator style={{ marginVertical: 12 }} color={C.accent} />}
+        {rounds && (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 8 }}>
+            {rounds.slice(0, 7).map(r => {
+              const open = isRoundOpen(r);
+              return (
+                <TouchableOpacity key={r.drawDate} disabled={!open}
+                  style={[s.dateChip, betDate === r.drawDate && s.dateChipOn, !open && s.dateChipClosed]}
+                  onPress={() => changeBetDate(r.drawDate)}>
+                  <Text style={[s.dateChipTxt, betDate === r.drawDate && s.dateChipOnTxt]}>
+                    {fmtDate(r.drawDate, lang, { weekday: 'short', day: 'numeric', month: 'short' })}
+                  </Text>
+                  <Text style={[s.dateChipSub, betDate === r.drawDate && s.dateChipOnTxt]}>
+                    {open ? fmtCloseTime(r.closesAt) : t('roundClosed') as string}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+        )}
+        {round && (
+          <View style={[s.closeBox, !roundOpen && s.closeBoxClosed]}>
+            <Text style={s.closeBoxMain}>
+              ⏰ {(t('roundCloses') as string).replace('{time}', fmtCloseTime(round.closesAt))}
+            </Text>
+            <Text style={s.closeBoxSub}>
+              {roundOpen
+                ? (t('closesIn') as string).replace('{v}', fmtCountdown(msUntilClose(round)))
+                : t('errRoundClosed') as string}
+            </Text>
+          </View>
+        )}
+        {rounds && !round && !roundsFailed && <Text style={s.muted}>{t('noOpenRound') as string}</Text>}
 
         <Text style={s.label}>{t('betNum')}</Text>
         <TextInput style={s.input} value={betNum}
@@ -231,6 +397,10 @@ export default function RiskBuyScreen() {
           <TouchableOpacity style={[s.primaryBtn, { flex: 1 }, buyBlocked && s.btnDisabled]}
             onPress={addToCart} disabled={buyBlocked}>
             <Text style={s.primaryBtnTxt}>➕ {t('addBet')}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={[s.randomBtn, buyBlocked && s.btnDisabled]}
+            onPress={() => setSetsOpen(true)} disabled={buyBlocked}>
+            <Text style={s.randomBtnTxt}>📚 {t('setsBtn')}</Text>
           </TouchableOpacity>
           {flags?.random_generator_enabled !== false && (
             <TouchableOpacity style={[s.randomBtn, buyBlocked && s.btnDisabled]}
@@ -267,16 +437,17 @@ export default function RiskBuyScreen() {
               {(t('stakeTotal') as string).replace('{v}', cartTotal.toLocaleString())}
             </Text>
             <TouchableOpacity style={[s.confirmPurchaseBtn, buyBlocked && s.btnDisabled]}
-              onPress={confirmPurchase} disabled={buying || buyBlocked}>
-              {buying
-                ? <ActivityIndicator color="#fff" size="small" />
-                : <Text style={s.primaryBtnTxt}>✅ {t('confirmPurchaseBtn')}</Text>}
+              onPress={openReview} disabled={buyBlocked}>
+              <Text style={s.primaryBtnTxt}>✅ {t('confirmPurchaseBtn')}</Text>
             </TouchableOpacity>
             {!session && (
               <Text style={[s.muted, { textAlign: 'center', marginTop: 8 }]}>🔒 {t('loginRequiredMsg') as string}</Text>
             )}
-            {buyBlocked && (
+            {flagsBlocked && (
               <Text style={[s.muted, { textAlign: 'center', marginTop: 8 }]}>⛔ {t('buyDisabled') as string}</Text>
+            )}
+            {!flagsBlocked && !roundOpen && (
+              <Text style={[s.muted, { textAlign: 'center', marginTop: 8 }]}>⛔ {t('errRoundClosed') as string}</Text>
             )}
           </View>
         )}
@@ -341,63 +512,81 @@ export default function RiskBuyScreen() {
         </View>
       </Modal>
 
-      {/* receipt modal */}
-      <Modal visible={!!receipt} animationType="fade" transparent onRequestClose={closeReceipt}>
+      <NumberSetsModal
+        visible={setsOpen}
+        onClose={() => setSetsOpen(false)}
+        draws={getDraws()}
+        cart={cart}
+        stake={parseInt(betAmt.replace(/\D/g, ''), 10) || AMOUNT_STEP}
+        onApply={applySet}
+      />
+
+      {/* review before paying */}
+      <Modal visible={reviewOpen} animationType="slide" transparent onRequestClose={() => !buying && setReviewOpen(false)}>
         <View style={s.modalOverlay}>
-          <ScrollView style={s.receiptScroll} contentContainerStyle={{ paddingBottom: 24 }}>
-            <View style={s.receiptCard}>
-              <Text style={s.receiptCheck}>✅</Text>
-              <Text style={s.receiptTitle}>{t('purchaseConfirmed') as string}</Text>
-              {receipt && <Text style={s.receiptTime}>{fmtDateTime(receipt.createdAt, lang)}</Text>}
-              <View style={s.receiptDivider} />
-              {receipt && (
-                <>
-                  <View style={s.receiptRow}>
-                    <Text style={s.receiptLabel}>{t('drawRoundLabel') as string}</Text>
-                    <Text style={s.receiptValue}>{fmtDate(receipt.drawDate, lang)}</Text>
-                  </View>
-                  <View style={s.receiptTableHead}>
-                    <Text style={[s.receiptTh, { flex: 1.6 }]}>{t('betNum') as string}</Text>
-                    <Text style={s.receiptTh}>{t('betAmount') as string}</Text>
-                  </View>
-                  {receipt.lines.slice(0, 100).map(l => (
-                    <View key={l.num} style={s.receiptTr}>
-                      <Text style={[s.receiptTd, { flex: 1.6, fontFamily: 'Courier New' }]}>
-                        {overallLineIcon(l.status)} {l.num}
-                      </Text>
-                      <Text style={s.receiptTd}>{l.amount.toLocaleString()} ₭</Text>
-                    </View>
-                  ))}
-                  {receipt.lines.length > 100 && (
-                    <Text style={[s.muted, { textAlign: 'center', marginTop: 6 }]}>
-                      {(t('moreNumbers') as string).replace('{n}', String(receipt.lines.length - 100))}
-                    </Text>
-                  )}
-                  <View style={s.receiptDivider} />
-                  <View style={s.receiptRow}>
-                    <Text style={s.receiptTotalLabel}>{t('totalCount') as string}</Text>
-                    <Text style={s.receiptTotalValue}>{receipt.lines.length} {t('numbersUnit') as string}</Text>
-                  </View>
-                  <View style={s.receiptRow}>
-                    <Text style={s.receiptTotalLabel}>{t('totalAmountLabel') as string}</Text>
-                    <Text style={s.receiptTotalValue}>
-                      {receipt.lines.reduce((sum, l) => sum + l.amount, 0).toLocaleString()} ₭
-                    </Text>
-                  </View>
-                  <View style={s.receiptDivider} />
-                  <Text style={s.receiptMeta}>{t('billNo') as string}: {receipt.billNo}</Text>
-                  <Text style={s.receiptMeta}>{t('refNo') as string}: {receipt.refNo}</Text>
-                  <Text style={s.receiptMeta}>{t('channel') as string}: {receipt.channel}</Text>
-                </>
+          <View style={s.modalCard}>
+            <Text style={s.modalTitle}>🧾 {t('reviewTitle') as string}</Text>
+            <View style={s.revRow}><Text style={s.revLabel}>{t('reviewRound') as string}</Text>
+              <Text style={s.revValue}>{betDate ? fmtDate(betDate, lang) : '—'}</Text></View>
+            {round && (
+              <View style={s.revRow}><Text style={s.revLabel}>{t('reviewClose') as string}</Text>
+                <Text style={s.revValue}>
+                  {fmtCloseTime(round.closesAt)} · {roundOpen ? fmtCountdown(msUntilClose(round)) : t('roundClosed') as string}
+                </Text></View>
+            )}
+            <View style={s.revRow}><Text style={s.revLabel}>{t('reviewCount') as string}</Text>
+              <Text style={s.revValue}>{cart.length} {t('numbersUnit') as string}</Text></View>
+            <ScrollView style={s.revList} nestedScrollEnabled>
+              {cart.slice(0, 50).map(c => (
+                <View key={c.num} style={s.revLine}>
+                  <Text style={s.revNum}>{c.num}</Text>
+                  <Text style={s.revAmt}>{c.amount.toLocaleString()} ₭</Text>
+                </View>
+              ))}
+              {cart.length > 50 && (
+                <Text style={[s.muted, { textAlign: 'center', marginTop: 4 }]}>
+                  {(t('moreNumbers') as string).replace('{n}', String(cart.length - 50))}
+                </Text>
               )}
-              <Text style={s.receiptDemo}>ℹ️ {t('demoNote') as string}</Text>
-              <TouchableOpacity style={s.primaryBtn} onPress={closeReceipt}>
-                <Text style={s.primaryBtnTxt}>{t('close') as string}</Text>
+            </ScrollView>
+            <View style={s.revRow}><Text style={s.revTotalLabel}>{t('reviewTotal') as string}</Text>
+              <Text style={s.revTotal}>{cartTotal.toLocaleString()} ₭</Text></View>
+            <View style={s.revRow}><Text style={s.revLabel}>{t('reviewBalanceNow') as string}</Text>
+              <Text style={s.revValue}>{(stats?.balance ?? 0).toLocaleString()} ₭</Text></View>
+            <View style={s.revRow}><Text style={s.revLabel}>{t('reviewBalanceAfter') as string}</Text>
+              <Text style={[s.revValue, (stats?.balance ?? 0) < cartTotal && { color: '#e57373' }]}>
+                {((stats?.balance ?? 0) - cartTotal).toLocaleString()} ₭
+              </Text></View>
+
+            <Text style={s.revWarn}>⚠️ {t('reviewWarn') as string}</Text>
+            {buyMsg && <Text style={s.revErr}>{buyMsg}</Text>}
+
+            <View style={s.rowGap}>
+              <TouchableOpacity style={[s.cancelBtn, { flex: 1 }]} disabled={buying} onPress={() => setReviewOpen(false)}>
+                <Text style={s.cancelBtnTxt}>{t('backToCart') as string}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[s.confirmPurchaseBtn, { flex: 1.4, marginTop: 4 },
+                  (buying || !roundOpen || (stats?.balance ?? 0) < cartTotal) && s.btnDisabled]}
+                disabled={buying || !roundOpen || (stats?.balance ?? 0) < cartTotal} onPress={payNow}>
+                {buying
+                  ? <ActivityIndicator color="#fff" size="small" />
+                  : <Text style={s.primaryBtnTxt}>{t('payNow') as string}</Text>}
               </TouchableOpacity>
             </View>
-          </ScrollView>
+            {buying && <Text style={[s.muted, { textAlign: 'center', marginTop: 8 }]}>{t('processing') as string}</Text>}
+          </View>
         </View>
       </Modal>
+
+      {/* ticket — only ever shown for a ticket the server has issued */}
+      <TicketModal
+        purchase={receipt?.purchase ?? null}
+        justSaved
+        closesAt={receipt?.closesAt}
+        balanceAfter={receipt?.balanceAfter}
+        onClose={closeReceipt}
+      />
 
       <AccountModal visible={accountOpen} onClose={() => setAccountOpen(false)} />
     </ScrollView>
@@ -469,21 +658,25 @@ const s = StyleSheet.create({
   dateChipOn: { backgroundColor: C.accent, borderColor: C.accent },
   dateChipTxt: { color: C.muted, fontSize: 13 },
   dateChipOnTxt: { color: '#fff', fontWeight: 'bold' },
-  receiptScroll: { maxHeight: '90%' },
-  receiptCard: { backgroundColor: C.card, borderRadius: 20, padding: 24, margin: 16, alignItems: 'center' },
-  receiptCheck: { fontSize: 46, marginBottom: 4 },
-  receiptTitle: { color: C.text, fontSize: 18, fontWeight: 'bold' },
-  receiptTime: { color: C.muted, fontSize: 12, marginTop: 4, marginBottom: 12 },
-  receiptDivider: { height: 1, backgroundColor: C.border, width: '100%', marginVertical: 10 },
-  receiptRow: { flexDirection: 'row', justifyContent: 'space-between', width: '100%', marginBottom: 4 },
-  receiptLabel: { color: C.muted, fontSize: 13 },
-  receiptValue: { color: C.text, fontSize: 13, fontWeight: 'bold' },
-  receiptTableHead: { flexDirection: 'row', width: '100%', borderBottomWidth: 1, borderBottomColor: C.border, paddingBottom: 6, marginBottom: 4 },
-  receiptTh: { flex: 1, color: C.muted, fontSize: 12, fontWeight: 'bold' },
-  receiptTr: { flexDirection: 'row', width: '100%', paddingVertical: 3 },
-  receiptTd: { flex: 1, color: C.text, fontSize: 13 },
-  receiptTotalLabel: { color: C.text, fontSize: 14, fontWeight: 'bold' },
-  receiptTotalValue: { color: C.gold, fontSize: 14, fontWeight: 'bold' },
-  receiptMeta: { color: C.muted, fontSize: 11, alignSelf: 'flex-start' },
-  receiptDemo: { color: C.muted, fontSize: 11, textAlign: 'center', marginTop: 14, marginBottom: 16, lineHeight: 16 },
+  dateChipClosed: { opacity: 0.4 },
+  dateChipSub: { color: C.muted, fontSize: 10, marginTop: 2, textAlign: 'center' },
+  roundErr: { backgroundColor: '#FCEAEA', borderWidth: 1, borderColor: '#e57373', borderRadius: 10, padding: 12, marginBottom: 10 },
+  roundErrTxt: { color: '#c0392b', fontSize: 12, lineHeight: 17 },
+  roundErrRetry: { color: C.accent, fontWeight: 'bold', fontSize: 13, marginTop: 6 },
+  closeBox: { backgroundColor: C.accent + '14', borderWidth: 1, borderColor: C.accent, borderRadius: 12,
+    padding: 12, marginBottom: 14, alignItems: 'center' },
+  closeBoxClosed: { backgroundColor: '#FCEAEA', borderColor: '#e57373' },
+  closeBoxMain: { color: C.text, fontWeight: 'bold', fontSize: 14 },
+  closeBoxSub: { color: C.accent, fontWeight: 'bold', fontSize: 18, marginTop: 4, fontFamily: 'Courier New' },
+  revRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 },
+  revLabel: { color: C.muted, fontSize: 13 },
+  revValue: { color: C.text, fontSize: 13, fontWeight: 'bold' },
+  revList: { maxHeight: 160, backgroundColor: C.input, borderRadius: 10, padding: 8, marginVertical: 8 },
+  revLine: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 2 },
+  revNum: { color: C.text, fontFamily: 'Courier New', fontSize: 14, fontWeight: 'bold' },
+  revAmt: { color: C.muted, fontSize: 13 },
+  revTotalLabel: { color: C.text, fontSize: 15, fontWeight: 'bold' },
+  revTotal: { color: C.gold, fontSize: 17, fontWeight: 'bold' },
+  revWarn: { color: C.muted, fontSize: 11, lineHeight: 16, marginTop: 8, marginBottom: 8 },
+  revErr: { color: '#c0392b', fontSize: 12, lineHeight: 17, marginBottom: 8, backgroundColor: '#FCEAEA', padding: 10, borderRadius: 8 },
 });

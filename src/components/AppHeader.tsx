@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Image, Modal } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useNavigation } from '@react-navigation/native';
+import { useNotifications } from '../data/notifications';
 import { useI18n, LANGS, type Lang } from '../data/i18n';
 import { useAuth } from '../data/auth';
 import AccountModal from './AccountModal';
@@ -12,6 +14,9 @@ export default function AppHeader() {
   const { t, lang, setLang } = useI18n();
   const { session } = useAuth();
   const insets = useSafeAreaInsets();
+  const nav = useNavigation<any>();
+  const { unread, closingSoon } = useNotifications();
+  const badge = unread + (closingSoon ? 1 : 0);
   const [langOpen, setLangOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
 
@@ -25,6 +30,12 @@ export default function AppHeader() {
       <View style={s.right}>
         <TouchableOpacity style={s.langBtn} onPress={() => setLangOpen(true)}>
           <Text style={s.langTxt}>{LANG_LABELS[lang]}</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={s.profileBtn} onPress={() => nav.navigate('Notifications')}>
+          <Text style={s.profileIcon}>🔔</Text>
+          {badge > 0 && (
+            <View style={s.badge}><Text style={s.badgeTxt}>{badge > 9 ? '9+' : badge}</Text></View>
+          )}
         </TouchableOpacity>
         <TouchableOpacity style={[s.profileBtn, session && s.profileBtnOn]} onPress={() => setProfileOpen(true)}>
           <Text style={s.profileIcon}>👤</Text>
@@ -70,6 +81,9 @@ const s = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: C.border },
   profileBtnOn: { backgroundColor: C.accent + '22', borderColor: C.accent },
   profileIcon: { fontSize: 16 },
+  badge: { position: 'absolute', top: -4, right: -4, minWidth: 16, height: 16, borderRadius: 8,
+    backgroundColor: '#e53935', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 3 },
+  badgeTxt: { color: '#fff', fontSize: 9, fontWeight: 'bold' },
   langOverlay: { flex: 1, backgroundColor: '#0004' },
   langSheet: { position: 'absolute', right: 16,
     backgroundColor: C.card, borderRadius: 12, borderWidth: 1, borderColor: C.border,

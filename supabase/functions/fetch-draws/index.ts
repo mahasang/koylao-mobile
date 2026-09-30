@@ -1,5 +1,5 @@
 // Supabase Edge Function: pulls the latest Lao lottery results from
-// laodl.com and upserts them into the canonical public.draws table.
+// laodl.com and hands them to ingest_draws() (public.draws table).
 // Deploy with: supabase functions deploy fetch-draws
 // Schedule it (see supabase/README.md) so results land automatically
 // without any client having to fetch laodl.com itself.
@@ -26,22 +26,25 @@ Deno.serve(async () => {
     });
   }
 
-  const upserts = rows
+  const incoming = rows
     .filter((r) => r.winNumber && r.roundDate)
     .map((r) => ({
       draw_date: String(r.roundDate).slice(0, 10),
       num: String(r.winNumber),
       source: 'laodl',
-      updated_at: new Date().toISOString(),
+      source_url: LAODL_URL,
     }));
 
-  if (upserts.length === 0) {
+  if (incoming.length === 0) {
     return new Response(JSON.stringify({ upserted: 0 }), {
       headers: { 'Content-Type': 'application/json' },
     });
   }
 
-  const { error } = await supabase.from('draws').upsert(upserts, { onConflict: 'draw_date' });
+  // ingest_draws() stores new results as PENDING (unless the
+  // auto_confirm_draws flag is on), never overwrites a confirmed result,
+  // and settles bets only for confirmed draws.
+  const { data, error } = await supabase.rpc('ingest_draws', { p_rows: incoming });
   if (error) {
     return new Response(JSON.stringify({ error: error.message }), {
       status: 500,
@@ -49,10 +52,7 @@ Deno.serve(async () => {
     });
   }
 
-  // Also settle any bets that were waiting on a result that just came in.
-  await supabase.rpc('evaluate_all_purchases');
-
-  return new Response(JSON.stringify({ upserted: upserts.length }), {
+  return new Response(JSON.stringify({ upserted: (data?.inserted ?? 0) + (data?.updated ?? 0), ...data }), {
     headers: { 'Content-Type': 'application/json' },
   });
 });

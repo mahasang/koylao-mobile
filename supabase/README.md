@@ -7,7 +7,8 @@ Run once, in order, after creating the Supabase project:
 3. **SQL Editor → New query** → paste and run `schema_admin_users.sql` (lets the admin dashboard list users with their email).
 4. **SQL Editor → New query** → paste and run `schema_wallet.sql` (trial-money balance: 1,000,000 for every user, spent on purchase, paid back on a win).
 5. **SQL Editor → New query** → paste and run `schema_rbac.sql` (roles, audit log, feature flags — see below).
-6. Make yourself an admin (needed for the dashboard):
+6. **SQL Editor → New query** → paste and run `schema_trust.sql` (server-enforced closing time, tickets, result confirmation, wallet ledger — see below). Safe to re-run. Then **redeploy the `fetch-draws` function** (it now calls `ingest_draws()`).
+7. Make yourself an admin (needed for the dashboard):
    ```sql
    update public.profiles set is_admin = true
    where id = (select id from auth.users where email = 'you@example.com');
@@ -40,6 +41,47 @@ Run once, in order, after creating the Supabase project:
   mobile app), editable only by `super_admin` via `admin_set_flag('key',
   true/false)` or the dashboard's Feature Flags page. Seeded with
   `buy_enabled`, `random_generator_enabled`, and `maintenance_mode`.
+
+## Trust layer (`schema_trust.sql`)
+
+What it guarantees, and where:
+
+- **Closing time** — `draw_rounds.closes_at` (default 20:00 Laos time on the draw
+  day). `create_purchase()` rejects a closed, past, weekend or >14-day-out round
+  using the server clock; the app just displays `list_rounds()`. Move one
+  round's close with `admin_set_round_close(date, timestamptz)` (draws admin,
+  audited).
+- **Tickets** — `create_purchase(p_id, p_draw_date, p_lines)` checks the round,
+  stake limits, duplicates, feature flags and balance, deducts the money and
+  issues `ticket_no` + `verify_code` in one transaction. `p_id` is an
+  idempotency key: re-sending it returns the same ticket, never a second
+  charge. Anyone with ticket no. + code can call `verify_ticket()`; it also
+  reports whether the stored lines still match what was issued (`intact`).
+- **Results** — `draws.status` is `pending` or `confirmed`, with `source`,
+  `updated_at`, `confirmed_at`. The feed (`ingest_draws`) and manual entry
+  (`admin_upsert_draw`) both land as **pending**; a draws admin releases payouts
+  with `admin_confirm_draw(date)` (dashboard: Draws → "ຢືນຢັນ + ຈ່າຍລາງວັນ").
+  Set the `auto_confirm_draws` flag to skip that step for the official feed.
+  Only confirmed results settle bets; a confirmed result is never overwritten
+  by the feed (a mismatch is written to the audit log as `draw_source_conflict`)
+  and can't be edited once bets on it have settled.
+- **Wallet ledger** — every balance change is a row in `wallet_transactions`
+  (append-only) written by `wallet_apply()`. A direct `UPDATE profiles SET
+  balance` — including from the SQL editor — is refused. `admin_adjust_balance`
+  now requires a written reason. Check integrity any time with
+  `select * from admin_wallet_reconcile();` (should return no rows).
+- **Deposit / withdraw** — `request_wallet_change()` → admin approves in the
+  dashboard's "ຝາກ/ຖອນ" page (`admin_decide_request`). A withdrawal is held from
+  the balance immediately and released on reject/cancel. This is a request /
+  approval workflow for the trial-money wallet; it does not move real money.
+- **Notifications** — `notifications` rows are written only by the server: ticket
+  saved (`purchase_ok`), ticket settled (`draw_result`, one per ticket) and
+  deposit/withdraw decisions. The app shows them under the bell icon and marks
+  them read with `mark_notifications_read()`. The "closing soon" reminder is
+  computed on the phone from the round's closing time. There are no phone push
+  alerts (that would need `expo-notifications` and push credentials).
+- Also fixed: `payout_for` returned `integer` and overflowed on large 6-digit
+  wins (now `bigint`), and `log_audit` was callable by any client.
 
 ## Deploy the fetch-draws Edge Function
 

@@ -3,7 +3,10 @@ import { View, Text, TouchableOpacity, ScrollView, StyleSheet } from 'react-nati
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { getDraws, fetchLatestDraws, animalName, animalEmoji } from '../data/lottery';
 import type { Draw } from '../data/lottery';
-import { nextDrawInfo } from '../utils/lottery';
+import { fmtDate } from '../utils/lottery';
+import { fetchRounds, isRoundOpen, msUntilClose, fmtCloseTime } from '../data/rounds';
+import type { Round } from '../data/rounds';
+import ResultMeta from '../components/ResultMeta';
 import { loadPurchases, overallPurchaseStatus, purchaseTotal, fmtDateTime } from '../data/purchases';
 import type { Purchase } from '../data/purchases';
 import { useI18n } from '../data/i18n';
@@ -14,14 +17,21 @@ const RECENT_BETS_CAP = 5;
 export default function RiskScreen() {
   const { t, lang } = useI18n();
   const nav = useNavigation<any>();
-  const [nd, setNd] = useState(nextDrawInfo());
+  const [rounds, setRounds] = useState<Round[] | null>(null);
+  const [roundsFailed, setRoundsFailed] = useState(false);
+  const [, setTick] = useState(0);
   const [draws, setDraws] = useState<Draw[]>(getDraws());
   const [recentBets, setRecentBets] = useState<Purchase[]>([]);
   const [hasMore, setHasMore] = useState(false);
 
   useEffect(() => {
-    const iv = setInterval(() => setNd(nextDrawInfo()), 1000);
+    const iv = setInterval(() => setTick(n => n + 1), 1000);
     return () => clearInterval(iv);
+  }, []);
+
+  const loadRounds = useCallback(() => {
+    setRoundsFailed(false);
+    fetchRounds().then(setRounds).catch(() => setRoundsFailed(true));
   }, []);
 
   useEffect(() => {
@@ -29,38 +39,57 @@ export default function RiskScreen() {
   }, []);
 
   useFocusEffect(useCallback(() => {
+    loadRounds();
     setDraws(getDraws());
     loadPurchases().then(purchases => {
       const sorted = [...purchases].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
       setRecentBets(sorted.slice(0, RECENT_BETS_CAP));
       setHasMore(sorted.length > RECENT_BETS_CAP);
     });
-  }, []));
+  }, [loadRounds]));
 
   const latest = draws[0];
+  // The countdown runs to the SERVER's closing time for the next open round.
+  const next = rounds?.find(isRoundOpen) ?? null;
+  const ms = next ? msUntilClose(next) : 0;
+  const nd = {
+    days: Math.floor(ms / 86400000), hours: Math.floor((ms % 86400000) / 3600000),
+    minutes: Math.floor((ms % 3600000) / 60000), seconds: Math.floor((ms % 60000) / 1000),
+  };
 
   return (
     <ScrollView style={s.scroll} contentContainerStyle={s.content}>
-      {/* countdown */}
+      {/* countdown to the server's closing time */}
       <View style={s.card}>
         <Text style={s.cardTitle}>⏳ {t('nextDraw')}</Text>
-        <View style={s.countRow}>
-          <Text style={s.countNum}>{nd.days}</Text>
-          <Text style={s.countUnit}>{t('days')}</Text>
-          <Text style={s.countNum}>{String(nd.hours).padStart(2, '0')}</Text>
-          <Text style={s.countUnit}>{t('hours')}</Text>
-          <Text style={s.countNum}>{String(nd.minutes).padStart(2, '0')}</Text>
-          <Text style={s.countUnit}>{t('minutes')}</Text>
-          <Text style={s.countNum}>{String(nd.seconds).padStart(2, '0')}</Text>
-          <Text style={s.countUnit}>{t('seconds')}</Text>
-        </View>
+        {next ? (
+          <>
+            <View style={s.countRow}>
+              <Text style={s.countNum}>{nd.days}</Text>
+              <Text style={s.countUnit}>{t('days')}</Text>
+              <Text style={s.countNum}>{String(nd.hours).padStart(2, '0')}</Text>
+              <Text style={s.countUnit}>{t('hours')}</Text>
+              <Text style={s.countNum}>{String(nd.minutes).padStart(2, '0')}</Text>
+              <Text style={s.countUnit}>{t('minutes')}</Text>
+              <Text style={s.countNum}>{String(nd.seconds).padStart(2, '0')}</Text>
+              <Text style={s.countUnit}>{t('seconds')}</Text>
+            </View>
+            <Text style={s.closeLine}>
+              {fmtDate(next.drawDate, lang, { weekday: 'short', day: 'numeric', month: 'short' })} · ⏰ {(t('roundCloses') as string).replace('{time}', fmtCloseTime(next.closesAt))}
+            </Text>
+          </>
+        ) : roundsFailed ? (
+          <TouchableOpacity onPress={loadRounds}>
+            <Text style={s.muted}>⚠️ {t('roundsLoadFail') as string} — {t('retryBtn') as string}</Text>
+          </TouchableOpacity>
+        ) : rounds ? <Text style={s.muted}>{t('noOpenRound') as string}</Text> : null}
         <Text style={s.muted}>{t('drawTime') as string}</Text>
       </View>
 
       {/* latest result */}
       {latest && (
         <View style={[s.card, s.center]}>
-          <Text style={s.resultLabel}>{t('latestResult')}</Text>
+          <Text style={s.resultLabel}>{t('latestResult')} · {fmtDate(latest.date, lang)}</Text>
           <View style={s.digitsRow}>
             {[...latest.num].map((ch, i) => (
               <Text key={i} style={[s.digit, s.digitHl]}>{ch}</Text>
@@ -70,6 +99,7 @@ export default function RiskScreen() {
             <Text style={s.animalEmoji}>{animalEmoji(latest.num.slice(-2))}</Text>
             <Text style={s.animalBadge}>{animalName(latest.num.slice(-2), lang)}</Text>
           </View>
+          <ResultMeta draw={latest} />
         </View>
       )}
 
@@ -92,6 +122,19 @@ export default function RiskScreen() {
           <Text style={s.menuIcon}>📜</Text>
           <Text style={s.menuTitle}>{t('purchaseHistory') as string}</Text>
           <Text style={s.menuDesc}>{t('purchaseHistoryDesc') as string}</Text>
+        </TouchableOpacity>
+      </View>
+
+      <View style={[s.menuRow, { marginTop: 12 }]}>
+        <TouchableOpacity style={s.menuCard} onPress={() => nav.navigate('Wallet')}>
+          <Text style={s.menuIcon}>👛</Text>
+          <Text style={s.menuTitle}>{t('menuWalletT') as string}</Text>
+          <Text style={s.menuDesc}>{t('menuWalletD') as string}</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={s.menuCard} onPress={() => nav.navigate('VerifyTicket')}>
+          <Text style={s.menuIcon}>🔍</Text>
+          <Text style={s.menuTitle}>{t('menuVerifyT') as string}</Text>
+          <Text style={s.menuDesc}>{t('menuVerifyD') as string}</Text>
         </TouchableOpacity>
       </View>
 
@@ -137,6 +180,7 @@ const s = StyleSheet.create({
   cardTitle: { color: C.text, fontSize: 17, fontWeight: 'bold', marginBottom: 8 },
   hint: { color: C.muted, fontSize: 13, lineHeight: 18, marginBottom: 14 },
   muted: { color: C.muted, fontSize: 12 },
+  closeLine: { color: C.text, fontSize: 13, fontWeight: 'bold', marginBottom: 6 },
   countRow: { flexDirection: 'row', alignItems: 'baseline', flexWrap: 'wrap', gap: 3, marginBottom: 6 },
   countNum: { color: C.accent, fontSize: 26, fontWeight: 'bold' },
   countUnit: { color: C.muted, fontSize: 12, marginRight: 10 },

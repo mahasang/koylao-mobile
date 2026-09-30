@@ -1,14 +1,15 @@
 import React, { useState, useCallback } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, StyleSheet, Alert, Modal } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, StyleSheet, Alert } from 'react-native';
 import { useFocusEffect, useRoute, useNavigation } from '@react-navigation/native';
 import {
-  loadPurchases, evalPurchases, fmtDateTime, overallLineIcon, overallPurchaseStatus, purchaseTotal,
+  loadPurchases, evalPurchases, fmtDateTime, overallPurchaseStatus, purchaseTotal,
 } from '../data/purchases';
 import type { Purchase, NewWin } from '../data/purchases';
 import { fmtDate } from '../utils/lottery';
 import { useI18n } from '../data/i18n';
 import { useAuth } from '../data/auth';
 import WinCelebrationModal from '../components/WinCelebrationModal';
+import TicketModal from '../components/TicketModal';
 import { C } from '../theme';
 
 export default function RiskHistoryScreen() {
@@ -44,6 +45,13 @@ export default function RiskHistoryScreen() {
 
   const overallStatus = (p: Purchase) => overallPurchaseStatus(p, t);
 
+  // Sends the old numbers (and stakes) to the buy screen's cart; the customer
+  // still reviews and confirms there.
+  const repeat = (p: Purchase) => {
+    setViewing(null);
+    nav.navigate('RiskBuy', { repeat: p.lines.map(l => ({ num: l.num, amount: l.amount })) });
+  };
+
   const groupedDates = [...new Set(purchases.map(p => p.drawDate))].sort((a, b) => b.localeCompare(a));
 
   return (
@@ -57,67 +65,7 @@ export default function RiskHistoryScreen() {
         />
       )}
 
-      {/* bill detail modal */}
-      <Modal visible={!!viewing} animationType="fade" transparent onRequestClose={() => setViewing(null)}>
-        <View style={s.modalOverlay}>
-          <ScrollView style={s.receiptScroll} contentContainerStyle={{ paddingBottom: 24 }}>
-            <View style={s.receiptCard}>
-              <Text style={s.receiptCheck}>🧾</Text>
-              <Text style={s.receiptTitle}>{t('billDetails') as string}</Text>
-              {viewing && <Text style={s.receiptTime}>{fmtDateTime(viewing.createdAt, lang)}</Text>}
-              <View style={s.receiptDivider} />
-              {viewing && (
-                <>
-                  <View style={s.receiptRow}>
-                    <Text style={s.receiptLabel}>{t('drawRoundLabel') as string}</Text>
-                    <Text style={s.receiptValue}>{fmtDate(viewing.drawDate, lang)}</Text>
-                  </View>
-                  <View style={s.receiptTableHead}>
-                    <Text style={[s.receiptTh, { flex: 1.6 }]}>{t('betNum') as string}</Text>
-                    <Text style={s.receiptTh}>{t('betAmount') as string}</Text>
-                  </View>
-                  {viewing.lines.slice(0, 100).map(l => (
-                    <View key={l.num} style={s.receiptTr}>
-                      <Text style={[s.receiptTd, { flex: 1.6, fontFamily: 'Courier New' }]}>
-                        {overallLineIcon(l.status)} {l.num}
-                      </Text>
-                      <Text style={[s.receiptTd,
-                        l.status === 'win' && { color: '#2e9e4f', fontWeight: 'bold' },
-                        l.status === 'lose' && { color: '#e57373' }]}>
-                        {l.status === 'win' ? `+${(l.pay ?? 0).toLocaleString()}` : l.amount.toLocaleString()} ₭
-                      </Text>
-                    </View>
-                  ))}
-                  {viewing.lines.length > 100 && (
-                    <Text style={[s.muted, { textAlign: 'center', marginTop: 6 }]}>
-                      {(t('moreNumbers') as string).replace('{n}', String(viewing.lines.length - 100))}
-                    </Text>
-                  )}
-                  <View style={s.receiptDivider} />
-                  <View style={s.receiptRow}>
-                    <Text style={s.receiptTotalLabel}>{t('totalCount') as string}</Text>
-                    <Text style={s.receiptTotalValue}>{viewing.lines.length} {t('numbersUnit') as string}</Text>
-                  </View>
-                  <View style={s.receiptRow}>
-                    <Text style={s.receiptTotalLabel}>{t('totalAmountLabel') as string}</Text>
-                    <Text style={s.receiptTotalValue}>
-                      {viewing.lines.reduce((sum, l) => sum + l.amount, 0).toLocaleString()} ₭
-                    </Text>
-                  </View>
-                  <View style={s.receiptDivider} />
-                  <Text style={s.receiptMeta}>{t('billNo') as string}: {viewing.billNo}</Text>
-                  <Text style={s.receiptMeta}>{t('refNo') as string}: {viewing.refNo}</Text>
-                  <Text style={s.receiptMeta}>{t('channel') as string}: {viewing.channel}</Text>
-                </>
-              )}
-              <Text style={s.receiptDemo}>ℹ️ {t('demoNote') as string}</Text>
-              <TouchableOpacity style={s.primaryBtn} onPress={() => setViewing(null)}>
-                <Text style={s.primaryBtnTxt}>{t('close') as string}</Text>
-              </TouchableOpacity>
-            </View>
-          </ScrollView>
-        </View>
-      </Modal>
+      <TicketModal purchase={viewing} onClose={() => setViewing(null)} onRepeat={viewing ? () => repeat(viewing) : undefined} />
 
       {/* purchase history */}
       <View style={s.card}>
@@ -149,15 +97,20 @@ export default function RiskHistoryScreen() {
                           <Text style={s.muted}>{fmtDateTime(p.createdAt, lang)}</Text>
                           <Text style={s.purchaseTotal}>{totalAmt.toLocaleString()} ₭</Text>
                         </View>
-                        <Text style={s.purchaseSub}>{t('billNo') as string}: {p.billNo}</Text>
+                        <Text style={s.purchaseSub}>{p.ticketNo ? `${t('ticketNo') as string}: ${p.ticketNo}` : `${t('billNo') as string}: ${p.billNo}`}</Text>
                         <Text style={s.purchaseSub}>{t('channel') as string}: {p.channel}</Text>
                         <View style={[s.rowBetween, { marginTop: 4, marginBottom: 0 }]}>
                           <Text style={[s.purchaseStatusTxt, { color: stColor }]}>
                             {st.text} · {p.lines.length} {t('numbersUnit') as string}
                           </Text>
-                          <TouchableOpacity onPress={() => setViewing(p)}>
-                            <Text style={s.link}>{t('viewDetailsBtn') as string}</Text>
-                          </TouchableOpacity>
+                          <View style={{ flexDirection: 'row', gap: 14 }}>
+                            <TouchableOpacity onPress={() => repeat(p)}>
+                              <Text style={s.link}>🔁 {t('repeatBtn') as string}</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity onPress={() => setViewing(p)}>
+                              <Text style={s.link}>{t('viewDetailsBtn') as string}</Text>
+                            </TouchableOpacity>
+                          </View>
                         </View>
                       </View>
                     </View>
@@ -192,22 +145,4 @@ const s = StyleSheet.create({
   purchaseStatusTxt: { fontSize: 12, fontWeight: 'bold' },
   purchaseTotal: { color: C.gold, fontWeight: 'bold', fontSize: 14 },
   disc: { color: C.muted, fontSize: 11, textAlign: 'center', lineHeight: 16 },
-  modalOverlay: { flex: 1, backgroundColor: '#0006', justifyContent: 'flex-end' },
-  receiptScroll: { maxHeight: '90%' },
-  receiptCard: { backgroundColor: C.card, borderRadius: 20, padding: 24, margin: 16, alignItems: 'center' },
-  receiptCheck: { fontSize: 46, marginBottom: 4 },
-  receiptTitle: { color: C.text, fontSize: 18, fontWeight: 'bold' },
-  receiptTime: { color: C.muted, fontSize: 12, marginTop: 4, marginBottom: 12 },
-  receiptDivider: { height: 1, backgroundColor: C.border, width: '100%', marginVertical: 10 },
-  receiptRow: { flexDirection: 'row', justifyContent: 'space-between', width: '100%', marginBottom: 4 },
-  receiptLabel: { color: C.muted, fontSize: 13 },
-  receiptValue: { color: C.text, fontSize: 13, fontWeight: 'bold' },
-  receiptTableHead: { flexDirection: 'row', width: '100%', borderBottomWidth: 1, borderBottomColor: C.border, paddingBottom: 6, marginBottom: 4 },
-  receiptTh: { flex: 1, color: C.muted, fontSize: 12, fontWeight: 'bold' },
-  receiptTr: { flexDirection: 'row', width: '100%', paddingVertical: 3 },
-  receiptTd: { flex: 1, color: C.text, fontSize: 13 },
-  receiptTotalLabel: { color: C.text, fontSize: 14, fontWeight: 'bold' },
-  receiptTotalValue: { color: C.gold, fontSize: 14, fontWeight: 'bold' },
-  receiptMeta: { color: C.muted, fontSize: 11, alignSelf: 'flex-start' },
-  receiptDemo: { color: C.muted, fontSize: 11, textAlign: 'center', marginTop: 14, marginBottom: 16, lineHeight: 16 },
 });

@@ -6,6 +6,7 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { I18nProvider, useI18n } from './src/data/i18n';
 import { AuthProvider } from './src/data/auth';
+import { NotificationsProvider } from './src/data/notifications';
 import HomeScreen    from './src/screens/HomeScreen';
 import CheckScreen   from './src/screens/CheckScreen';
 import LuckyScreen   from './src/screens/LuckyScreen';
@@ -14,11 +15,16 @@ import RiskScreen        from './src/screens/RiskScreen';
 import RiskBuyScreen     from './src/screens/RiskBuyScreen';
 import RiskResultsScreen from './src/screens/RiskResultsScreen';
 import RiskHistoryScreen from './src/screens/RiskHistoryScreen';
+import WalletScreen      from './src/screens/WalletScreen';
+import VerifyTicketScreen from './src/screens/VerifyTicketScreen';
+import NotificationsScreen from './src/screens/NotificationsScreen';
+import HelpScreen from './src/screens/HelpScreen';
 import AppHeader from './src/components/AppHeader';
 import { C } from './src/theme';
 
 const Tab = createBottomTabNavigator();
 const RiskStackNav = createNativeStackNavigator();
+const RootStackNav = createNativeStackNavigator();
 
 function RiskStack() {
   const { t } = useI18n();
@@ -28,6 +34,8 @@ function RiskStack() {
       <RiskStackNav.Screen name="RiskBuy" component={RiskBuyScreen} options={{ title: t('goBuyBtn') as string }} />
       <RiskStackNav.Screen name="RiskResults" component={RiskResultsScreen} options={{ title: t('resultsHistoryTitle') as string }} />
       <RiskStackNav.Screen name="RiskHistory" component={RiskHistoryScreen} options={{ title: t('purchaseHistory') as string }} />
+      <RiskStackNav.Screen name="Wallet" component={WalletScreen} options={{ title: t('walletTitle') as string }} />
+      <RiskStackNav.Screen name="VerifyTicket" component={VerifyTicketScreen} options={{ title: t('verifyTitle') as string }} />
     </RiskStackNav.Navigator>
   );
 }
@@ -70,15 +78,28 @@ function Tabs() {
   );
 }
 
+function Root() {
+  const { t } = useI18n();
+  return (
+    <RootStackNav.Navigator>
+      <RootStackNav.Screen name="Tabs" component={Tabs} options={{ headerShown: false }} />
+      <RootStackNav.Screen name="Notifications" component={NotificationsScreen} options={{ title: t('notifTitle') as string }} />
+      <RootStackNav.Screen name="Help" component={HelpScreen} options={{ title: t('helpTitle') as string }} />
+    </RootStackNav.Navigator>
+  );
+}
+
 export default function App() {
   return (
     <SafeAreaProvider>
       <I18nProvider>
         <AuthProvider>
-          <StatusBar barStyle="dark-content" backgroundColor={C.bg} />
-          <NavigationContainer>
-            <Tabs />
-          </NavigationContainer>
+          <NotificationsProvider>
+            <StatusBar barStyle="dark-content" backgroundColor={C.bg} />
+            <NavigationContainer>
+              <Root />
+            </NavigationContainer>
+          </NotificationsProvider>
         </AuthProvider>
       </I18nProvider>
     </SafeAreaProvider>

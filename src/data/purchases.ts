@@ -7,46 +7,21 @@ export interface PurchaseLine { num: string; amount: number; status: LineStatus;
 export interface Purchase {
   id: string; billNo: string; refNo: string; channel: string;
   drawDate: string; createdAt: string; lines: PurchaseLine[];
+  // Issued by the server when the ticket is saved; absent on tickets that
+  // predate the ticket system (those still have billNo/refNo).
+  ticketNo?: string | null; verifyCode?: string | null;
+}
+// What create_purchase() returns once the ticket is really saved.
+export interface Ticket {
+  id: string; ticketNo: string; verifyCode: string; drawDate: string;
+  closesAt: string | null; createdAt: string; lineCount: number; total: number;
+  balanceAfter: number | null; replayed: boolean;
 }
 export interface CartItem { num: string; amount: number; }
 
 export function localDateStr(d: Date) {
   const p = (n: number) => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
-}
-
-export function nextWorkday(): Date {
-  const now = new Date();
-  const t = new Date(now); t.setHours(20, 0, 0, 0);
-  const wd = now.getDay(); let add = 0;
-  if (wd === 6) add = 2;
-  else if (wd === 0) add = 1;
-  else if (wd === 5 && now >= t) add = 3;
-  else if (now >= t) add = 1;
-  t.setDate(t.getDate() + add);
-  return t;
-}
-
-export function getWorkdays(count = 7): string[] {
-  const result: string[] = [];
-  const cursor = new Date(); cursor.setHours(0, 0, 0, 0);
-  while (result.length < count) {
-    const wd = cursor.getDay();
-    if (wd !== 0 && wd !== 6) result.push(localDateStr(cursor));
-    cursor.setDate(cursor.getDate() + 1);
-  }
-  return result;
-}
-
-function genBillNo(d: Date): string {
-  const p = (n: number) => String(n).padStart(2, '0');
-  const datePart = `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}`;
-  const rand = Math.random().toString(36).slice(2, 8).toUpperCase();
-  return `${datePart}-${rand}`;
-}
-
-function genRefNo(): string {
-  return String(Date.now()) + String(Math.floor(Math.random() * 900) + 100);
 }
 
 export function fmtDateTime(iso: string, lang: Lang): string {
@@ -56,35 +31,80 @@ export function fmtDateTime(iso: string, lang: Lang): string {
   return `${datePart} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
 }
 
-export function buildPurchase(drawDate: string, cart: CartItem[], channel: string): Purchase {
-  const now = new Date();
+// Client-side idempotency key for one purchase attempt. Re-sending the same
+// id after a dropped connection returns the ticket already saved instead of
+// charging twice, so the caller keeps it until the attempt is resolved.
+export function newPurchaseId(): string {
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}${Math.random().toString(36).slice(2, 6)}`;
+}
+
+export type PurchaseErrorCode =
+  | 'not_signed_in' | 'insufficient_balance' | 'round_closed' | 'invalid_draw_date'
+  | 'buying_disabled' | 'duplicate_number' | 'invalid_line' | 'empty_cart'
+  | 'too_many_lines' | 'unknown';
+
+const KNOWN_ERRORS: PurchaseErrorCode[] = [
+  'not_signed_in', 'insufficient_balance', 'round_closed', 'invalid_draw_date',
+  'buying_disabled', 'duplicate_number', 'invalid_line', 'empty_cart', 'too_many_lines',
+];
+
+// 'unknown' means we can't tell whether the server saved the ticket (e.g.
+// the connection dropped) — the caller must check before telling the user
+// anything either way.
+export function purchaseErrorCode(e: any): PurchaseErrorCode {
+  const msg = String(e?.message ?? '');
+  return KNOWN_ERRORS.find(c => msg.includes(c)) ?? 'unknown';
+}
+
+function toTicket(j: any): Ticket {
   return {
-    id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-    billNo: genBillNo(now),
-    refNo: genRefNo(),
-    channel,
-    drawDate,
-    createdAt: now.toISOString(),
-    lines: cart.map(c => ({ ...c, status: 'pending' as LineStatus })),
+    id: j.id, ticketNo: j.ticket_no, verifyCode: j.verify_code, drawDate: j.draw_date,
+    closesAt: j.closes_at ?? null, createdAt: j.created_at, lineCount: Number(j.line_count),
+    total: Number(j.total), balanceAfter: j.balance_after == null ? null : Number(j.balance_after),
+    replayed: !!j.replayed,
   };
 }
 
-// Writes a freshly-built purchase (see buildPurchase) to Supabase via
-// create_purchase(), which checks and deducts the caller's trial-money
-// balance atomically server-side — the client never inserts a purchase
-// row directly. Requires a signed-in user — callers must check
-// useAuth().session first. Throws with message 'insufficient_balance'
-// when the user doesn't have enough balance to cover the cart.
-export async function insertPurchase(p: Purchase): Promise<void> {
-  const { error } = await supabase.rpc('create_purchase', {
-    p_id: p.id,
-    p_bill_no: p.billNo,
-    p_ref_no: p.refNo,
-    p_channel: p.channel,
-    p_draw_date: p.drawDate,
-    p_lines: p.lines.map(l => ({ num: l.num, amount: l.amount })),
+// Buys the cart through create_purchase(): the server checks the round is
+// still open, the stake limits and the balance, deducts the money, and
+// issues the ticket — all in one transaction. Throws on any failure.
+export async function createPurchase(id: string, drawDate: string, cart: CartItem[], channel: string): Promise<Ticket> {
+  const { data, error } = await supabase.rpc('create_purchase', {
+    p_id: id,
+    p_draw_date: drawDate,
+    p_lines: cart.map(l => ({ num: l.num, amount: l.amount })),
+    p_channel: channel,
   });
   if (error) throw error;
+  if (!data?.ticket_no || !data?.verify_code) throw new Error('ticket_missing');
+  return toTicket(data);
+}
+
+function mapPurchase(p: any): Purchase {
+  return {
+    id: p.id,
+    billNo: p.bill_no,
+    refNo: p.ref_no,
+    channel: p.channel,
+    drawDate: p.draw_date,
+    createdAt: p.created_at,
+    ticketNo: p.ticket_no ?? null,
+    verifyCode: p.verify_code ?? null,
+    lines: (p.purchase_lines ?? []).map((l: any) => ({
+      num: l.num, amount: l.amount, status: l.status, hit: l.hit, pay: l.pay == null ? l.pay : Number(l.pay),
+    })),
+  };
+}
+
+const PURCHASE_COLS =
+  'id, bill_no, ref_no, channel, draw_date, created_at, ticket_no, verify_code, purchase_lines(num, amount, status, hit, pay)';
+
+// Reads one purchase back from the database. Returns null only when the
+// query succeeded and there is no such purchase; throws when it can't tell.
+export async function fetchPurchase(id: string): Promise<Purchase | null> {
+  const { data, error } = await supabase.from('purchases').select(PURCHASE_COLS).eq('id', id).maybeSingle();
+  if (error) throw error;
+  return data ? mapPurchase(data) : null;
 }
 
 // Loads the signed-in user's purchases (with their lines) from Supabase.
@@ -95,22 +115,12 @@ export async function loadPurchases(): Promise<Purchase[]> {
 
   const { data, error } = await supabase
     .from('purchases')
-    .select('id, bill_no, ref_no, channel, draw_date, created_at, purchase_lines(num, amount, status, hit, pay)')
+    .select(PURCHASE_COLS)
     .eq('user_id', user.id)
     .order('created_at', { ascending: false });
   if (error || !data) return [];
 
-  return data.map((p: any) => ({
-    id: p.id,
-    billNo: p.bill_no,
-    refNo: p.ref_no,
-    channel: p.channel,
-    drawDate: p.draw_date,
-    createdAt: p.created_at,
-    lines: (p.purchase_lines ?? []).map((l: any) => ({
-      num: l.num, amount: l.amount, status: l.status, hit: l.hit, pay: l.pay,
-    })),
-  }));
+  return data.map(mapPurchase);
 }
 
 export interface NewWin { num: string; amount: number; pay: number; hit: number; drawDate: string; billNo: string; }
@@ -130,7 +140,7 @@ export async function evalPurchases(previous: Purchase[]) {
   const newWins: NewWin[] = [];
   next.forEach(p => p.lines.forEach(l => {
     if (l.status === 'win' && before.get(`${p.id}:${l.num}`) !== 'win') {
-      newWins.push({ num: l.num, amount: l.amount, pay: l.pay ?? 0, hit: l.hit ?? 0, drawDate: p.drawDate, billNo: p.billNo });
+      newWins.push({ num: l.num, amount: l.amount, pay: l.pay ?? 0, hit: l.hit ?? 0, drawDate: p.drawDate, billNo: p.ticketNo ?? p.billNo });
     }
   }));
 

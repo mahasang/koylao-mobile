@@ -5,6 +5,7 @@ import { animalName, animalEmoji, getDraws, fetchLatestDraws } from '../data/lot
 import type { Draw } from '../data/lottery';
 import { fmtDate } from '../utils/lottery';
 import { useI18n } from '../data/i18n';
+import ResultMeta from '../components/ResultMeta';
 import { C } from '../theme';
 
 export default function RiskResultsScreen() {
@@ -45,6 +46,7 @@ export default function RiskResultsScreen() {
             <Text style={s.animalEmoji}>{animalEmoji(draws[0].num.slice(-2))}</Text>
             <Text style={s.animalBadge}>{animalName(draws[0].num.slice(-2), lang)}</Text>
           </View>
+          <ResultMeta draw={draws[0]} />
         </View>
       )}
 
@@ -57,7 +59,9 @@ export default function RiskResultsScreen() {
         </View>
         {draws.slice(0, histShown).map((d, i) => (
           <View key={d.date} style={[s.tableRow, i === 0 && s.tableRowHot]}>
-            <Text style={[s.thDate, s.td]}>{fmtDate(d.date, lang, { day: 'numeric', month: 'short', year: '2-digit' })}</Text>
+            <Text style={[s.thDate, s.td]}>
+              {d.status === 'pending' ? '⏳ ' : ''}{fmtDate(d.date, lang, { day: 'numeric', month: 'short', year: '2-digit' })}
+            </Text>
             <Text style={[s.thNum, s.tdMono]}>{d.num}</Text>
             <Text style={[s.thAnimal, s.td]}>{animalName(d.num.slice(-2), lang) ? `${animalEmoji(d.num.slice(-2))} ${animalName(d.num.slice(-2), lang)}` : '—'}</Text>
           </View>
