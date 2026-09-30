@@ -7,7 +7,6 @@ import type { Purchase, PurchaseLine, FullLine } from '../data/purchases';
 import { fmtCloseTime } from '../data/rounds';
 import { ANIMAL_MAP, ANIMAL_EMOJI } from '../data/animals';
 import { getDraws, fetchLatestDraws } from '../data/lottery';
-import { fmtDate } from '../utils/lottery';
 import { useI18n } from '../data/i18n';
 import { C } from '../theme';
 
@@ -38,7 +37,7 @@ function animalIcon(num: string): string {
 // Shows a bill exactly as the server stored it. Callers must only pass a purchase
 // they have read back from the database — never one built locally.
 export default function TicketModal({ purchase, onClose, justSaved, closesAt, balanceAfter, onRepeat }: Props) {
-  const { t, lang } = useI18n();
+  const { t } = useI18n();
   const insets = useSafeAreaInsets();
   const [copied, setCopied] = useState(false);
   const [, setDrawsTick] = useState(0);
