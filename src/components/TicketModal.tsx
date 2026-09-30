@@ -90,35 +90,41 @@ export default function TicketModal({ purchase, onClose, justSaved, closesAt, ba
   const prizeName = (hit?: number | null) => (hit ? (t(`p_${prizeId(hit)}`) as string) : '');
 
   const renderCell = (c: Cell | undefined, key: string) => {
-    if (!c) return <View key={key} style={s.cellHalf} />;
+    if (!c) return <View key={key} style={s.cellWrap} />;
     if (c.kind === 'full') {
       return (
-        <View key={key} style={s.cellHalf}>
-          <View style={s.numBox}><Text style={[s.num, s.numFull]}>{c.full.num}</Text><Text style={s.icon}>{animalIcon(c.full.num)}</Text></View>
-          <View style={s.amtBox}>
-            <Text style={s.fullTxt}>{t('numFull') as string}</Text>
-            <Text style={s.struck}>{c.full.requested.toLocaleString()}</Text>
+        <View key={key} style={s.cellWrap}>
+          <View style={s.cellTop}>
+            <View style={s.numBox}><Text style={[s.num, s.numFull]}>{c.full.num}</Text><Text style={s.icon}>{animalIcon(c.full.num)}</Text></View>
+            <View style={s.amtBox}>
+              <Text style={s.fullTxt}>{t('numFull') as string}</Text>
+              <Text style={s.struck}>{c.full.requested.toLocaleString()}</Text>
+            </View>
           </View>
         </View>
       );
     }
     const l = c.line;
     const cut = !!l.requested && l.requested > l.amount;
+    const won = l.status === 'win';
     return (
-      <View key={key} style={s.cellHalf}>
-        <View>
+      <View key={key} style={s.cellWrap}>
+        <View style={s.cellTop}>
           <View style={s.numBox}>
-            <Text style={[s.num, l.status === 'win' && s.numWin, l.status === 'lose' && s.numLose]}>{l.num}</Text>
+            <Text style={[s.num, won && s.numWin, l.status === 'lose' && s.numLose]}>{l.num}</Text>
             <Text style={s.icon}>{animalIcon(l.num)}</Text>
           </View>
-          {l.status === 'win' && <Text style={s.prizeTag}>{prizeName(l.hit)}</Text>}
+          <View style={s.amtBox}>
+            <Text style={[s.amt, l.status === 'lose' && s.amtLose]}>{l.amount.toLocaleString()}</Text>
+            {cut && <Text style={s.struck}>{l.requested!.toLocaleString()}</Text>}
+          </View>
         </View>
-        <View style={s.amtBox}>
-          {l.status === 'win'
-            ? <Text style={s.winTxt}>+{(l.pay ?? 0).toLocaleString()}</Text>
-            : <Text style={[s.amt, l.status === 'lose' && s.amtLose]}>{l.amount.toLocaleString()}</Text>}
-          {cut && <Text style={s.struck}>{l.requested!.toLocaleString()}</Text>}
-        </View>
+        {won && (
+          <View style={[s.winChip, l.hit === 6 && s.winChipJackpot]}>
+            <Text style={s.winChipName}>{l.hit === 6 ? '🎁' : '🏆'} {prizeName(l.hit)}</Text>
+            <Text style={s.winChipPay}>+{(l.pay ?? 0).toLocaleString()} ₭</Text>
+          </View>
+        )}
       </View>
     );
   };
@@ -318,7 +324,6 @@ const s = StyleSheet.create({
   prizeName: { color: C.text, fontSize: 14, flexShrink: 1 },
   prizePay: { color: '#2e9e4f', fontSize: 14, fontWeight: 'bold' },
   prizeSum: { color: '#8a5a00', fontSize: 14, fontWeight: 'bold', marginTop: 4 },
-  prizeTag: { color: '#2e9e4f', fontSize: 11, marginTop: 1 },
   heroLabel: { color: '#fff', fontSize: 15, fontWeight: 'bold' },
   heroDate: { color: '#ffd600', fontSize: 20, fontWeight: 'bold', marginTop: 4 },
   heroResult: { color: '#ffd600', fontSize: 22, fontWeight: 'bold', marginTop: 4, letterSpacing: 4, fontFamily: 'Courier New' },
@@ -334,6 +339,13 @@ const s = StyleSheet.create({
   thRow: { flexDirection: 'row', alignItems: 'center' },
   th: { color: C.text, fontSize: 15 },
   row: { flexDirection: 'row', paddingVertical: 7, gap: 16 },
+  cellWrap: { flex: 1 },
+  cellTop: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 6 },
+  winChip: { marginTop: 4, backgroundColor: '#e6f4ea', borderWidth: 1, borderColor: '#2e9e4f', borderRadius: 8,
+    paddingHorizontal: 8, paddingVertical: 4 },
+  winChipJackpot: { backgroundColor: '#fff3cd', borderColor: '#e8a020' },
+  winChipName: { color: '#1b5e20', fontSize: 12 },
+  winChipPay: { color: '#1b7a36', fontSize: 15, fontWeight: 'bold' },
   cellHalf: { flex: 1, flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 6 },
   numBox: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   num: { color: C.text, fontFamily: 'Courier New', fontSize: 17, letterSpacing: 0.5 },
@@ -344,7 +356,6 @@ const s = StyleSheet.create({
   amtBox: { alignItems: 'flex-end', flexShrink: 0 },
   amt: { color: C.text, fontSize: 17 },
   amtLose: { color: '#c0392b' },
-  winTxt: { color: '#2e9e4f', fontSize: 15, fontWeight: 'bold' },
   fullTxt: { color: '#c0392b', fontSize: 15 },
   struck: { color: C.muted, fontSize: 13, textDecorationLine: 'line-through' },
   more: { textAlign: 'center', color: C.muted, fontSize: 12, marginTop: 6 },
