@@ -32,11 +32,11 @@ export function payoutFor(hit: number | null, amount: number): number | null {
   return Math.round((amount / 1000) * PAY_MULT[hit]);
 }
 
-// Max stake allowed per digit-count: fewer digits = easier to win, so the
-// ceiling is higher; a full 6-digit match pays a huge multiplier, so its
-// stake is capped much lower to limit payout exposure.
+// The most that can be bought on ONE number in a draw, per digit-count. The server
+// enforces the same figure as a quota shared by all customers (number_quota_defaults
+// in supabase/schema_trust.sql) — keep the two in step.
 export const MAX_STAKE: Record<number, number> = {
-  6: 20000, 5: 1000000, 4: 10000000, 3: 20000000, 2: 50000000, 1: 100000000,
+  6: 25000, 5: 300000, 4: 2000000, 3: 10000000, 2: 100000000, 1: 1000000000,
 };
 
 export function maxStakeFor(digitCount: number): number | null {

@@ -74,15 +74,15 @@ $$;
 revoke all on function public.mark_notifications_read() from public, anon;
 grant execute on function public.mark_notifications_read() to authenticated;
 
--- Mirrors MAX_STAKE in src/utils/lottery.ts.
+-- Mirrors MAX_STAKE in src/utils/lottery.ts: the most one bill can put on one number.
 create or replace function public.max_stake_for(digits integer)
 returns bigint
 language sql
 immutable
 as $$
   select case digits
-    when 6 then 20000 when 5 then 1000000 when 4 then 10000000
-    when 3 then 20000000 when 2 then 50000000 when 1 then 100000000
+    when 6 then 25000 when 5 then 300000 when 4 then 2000000
+    when 3 then 10000000 when 2 then 100000000 when 1 then 1000000000
     else 0
   end::bigint;
 $$;
@@ -445,16 +445,19 @@ create sequence if not exists public.ticket_seq;
 -- ---- Number quotas -------------------------------------------------
 -- A number can only be sold up to a quota per draw, across all customers.
 -- Defaults come from the number of digits; a single number in a single draw
--- can be overridden. THE DEFAULTS BELOW ARE PLACEHOLDERS: they cap how much
--- the house could owe on one number, so set them deliberately
--- (admin_set_quota_default / admin_set_number_quota).
+-- can be overridden (admin_set_number_quota). Change a default with
+-- admin_set_quota_default — re-running this file never overwrites a value an
+-- admin chose; it only replaces the original placeholder figures.
 create table if not exists public.number_quota_defaults (
   digits integer primary key check (digits between 1 and 6),
   quota  bigint not null check (quota > 0)
 );
 insert into public.number_quota_defaults (digits, quota) values
-  (6, 100000), (5, 5000000), (4, 50000000), (3, 200000000), (2, 1000000000), (1, 2000000000)
-on conflict (digits) do nothing;
+  (6, 25000), (5, 300000), (4, 2000000), (3, 10000000), (2, 100000000), (1, 1000000000)
+on conflict (digits) do update set quota = excluded.quota
+  -- only while it still holds the first placeholder figure for that digit count
+  where public.number_quota_defaults.quota =
+    (array[2000000000, 1000000000, 200000000, 50000000, 5000000, 100000])[public.number_quota_defaults.digits];
 
 create table if not exists public.number_quota_overrides (
   draw_date date not null,
