@@ -22,6 +22,7 @@ interface Props {
 }
 
 const MAX_CELLS = 300;
+const MAX_WIN_ROWS = 50;
 const p2 = (n: number) => String(n).padStart(2, '0');
 
 // One cell of the number table: the number, what was bought, and — when a quota
@@ -76,17 +77,10 @@ export default function TicketModal({ purchase, onClose, justSaved, closesAt, ba
 
   const total = purchase ? purchase.lines.reduce((sum, l) => sum + l.amount, 0) : 0;
 
-  // Prizes already paid into the wallet for this bill, grouped by how many digits matched.
+  // Prizes already paid into the wallet for this bill.
   const wins = purchase ? purchase.lines.filter(l => l.status === 'win') : [];
   const winTotal = wins.reduce((sum, l) => sum + (l.pay ?? 0), 0);
   const hasJackpot = wins.some(l => l.hit === 6);
-  const prizeGroups = Object.values(wins.reduce((acc: Record<number, { hit: number; count: number; pay: number }>, l) => {
-    const hit = l.hit ?? 0;
-    acc[hit] = acc[hit] ?? { hit, count: 0, pay: 0 };
-    acc[hit].count += 1;
-    acc[hit].pay += l.pay ?? 0;
-    return acc;
-  }, {})).sort((a, b) => b.hit - a.hit);
   const prizeName = (hit?: number | null) => (hit ? (t(`p_${prizeId(hit)}`) as string) : '');
 
   const renderCell = (c: Cell | undefined, key: string) => {
@@ -203,15 +197,24 @@ export default function TicketModal({ purchase, onClose, justSaved, closesAt, ba
                 </View>
                 <View style={s.solid} />
 
-                {prizeGroups.length > 0 && (
+                {wins.length > 0 && (
                   <View style={s.prizeBox}>
-                    <Text style={s.prizeTitle}>🏆 {t('winBreakdown') as string}</Text>
-                    {prizeGroups.map(g => (
-                      <View key={g.hit} style={s.prizeRow}>
-                        <Text style={s.prizeName}>{prizeName(g.hit)} × {g.count}</Text>
-                        <Text style={s.prizePay}>+{g.pay.toLocaleString()} ₭</Text>
+                    <Text style={s.prizeTitle}>🏆 {t('winBreakdown') as string} ({wins.length})</Text>
+                    {[...wins].sort((x, y) => (y.pay ?? 0) - (x.pay ?? 0)).slice(0, MAX_WIN_ROWS).map(w => (
+                      <View key={w.num} style={[s.winRow, w.hit === 6 && s.winRowJackpot]}>
+                        <View style={{ flex: 1 }}>
+                          <Text style={s.winRowNum}>{w.num} {animalIcon(w.num)}</Text>
+                          <Text style={s.winRowKind}>{prizeName(w.hit)}</Text>
+                        </View>
+                        <View style={{ alignItems: 'flex-end' }}>
+                          <Text style={s.winRowBought}>{(t('winRowBought') as string).replace('{v}', w.amount.toLocaleString())}</Text>
+                          <Text style={s.winRowPay}>+{(w.pay ?? 0).toLocaleString()} ₭</Text>
+                        </View>
                       </View>
                     ))}
+                    {wins.length > MAX_WIN_ROWS && (
+                      <Text style={s.more}>{(t('moreNumbers') as string).replace('{n}', String(wins.length - MAX_WIN_ROWS))}</Text>
+                    )}
                     <View style={s.prizeRow}>
                       <Text style={s.prizeSum}>{t('winProfitBack') as string}</Text>
                       <Text style={s.prizeSum}>+{winTotal.toLocaleString()} ₭</Text>
@@ -319,6 +322,13 @@ const s = StyleSheet.create({
   winAmt: { color: '#fff', fontSize: 38, fontWeight: 'bold', marginTop: 2 },
   winSub: { color: '#fff', fontSize: 12, opacity: 0.9, marginTop: 2 },
   prizeBox: { backgroundColor: '#fff8e1', borderWidth: 1, borderColor: '#f0c040', borderRadius: 12, padding: 12, marginBottom: 10 },
+  winRow: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#ffffff', borderRadius: 8,
+    paddingHorizontal: 10, paddingVertical: 6, marginBottom: 6, borderWidth: 1, borderColor: '#cfe8d5' },
+  winRowJackpot: { backgroundColor: '#fff3cd', borderColor: '#e8a020' },
+  winRowNum: { color: '#1b5e20', fontFamily: 'Courier New', fontSize: 17, fontWeight: 'bold', letterSpacing: 0.5 },
+  winRowKind: { color: C.muted, fontSize: 12, marginTop: 1 },
+  winRowBought: { color: C.text, fontSize: 13 },
+  winRowPay: { color: '#1b7a36', fontSize: 17, fontWeight: 'bold' },
   prizeTitle: { color: '#8a5a00', fontWeight: 'bold', fontSize: 14, marginBottom: 6 },
   prizeRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 2, gap: 8 },
   prizeName: { color: C.text, fontSize: 14, flexShrink: 1 },
