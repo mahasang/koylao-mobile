@@ -5,7 +5,7 @@ import {
 } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import {
-  loadPurchases, fetchPurchase, createPurchase, newPurchaseId, purchaseErrorCode,
+  loadPurchases, fetchPurchase, createPurchase, newPurchaseId, purchaseErrorCode, previewQuota,
 } from '../data/purchases';
 import type { Purchase, CartItem, Ticket } from '../data/purchases';
 import { fetchRounds, isRoundOpen, msUntilClose, fmtCountdown, fmtCloseTime } from '../data/rounds';
@@ -52,6 +52,7 @@ export default function RiskBuyScreen() {
   const [buying, setBuying] = useState(false);
   const [flags, setFlags] = useState<Flags | null>(null);
   const [setsOpen, setSetsOpen] = useState(false);
+  const [quota, setQuota] = useState<Record<string, number> | null>(null);
   const [purchasesLoaded, setPurchasesLoaded] = useState(false);
   // Idempotency key of the purchase attempt in flight. Kept across retries so
   // a dropped connection can never charge twice; dropped when the cart changes.
@@ -228,6 +229,8 @@ export default function RiskBuyScreen() {
   const flagsBlocked = !!flags && (flags.maintenance_mode || !flags.buy_enabled);
   const buyBlocked = flagsBlocked || !roundOpen;
   const cartTotal = cart.reduce((sum, c) => sum + c.amount, 0);
+  // What would really be charged, given the quota left (equals the cart until the preview arrives).
+  const estTotal = quota ? cart.reduce((sum, c) => sum + Math.min(c.amount, Math.max(quota[c.num] ?? c.amount, 0)), 0) : cartTotal;
 
   // Step 1: nothing is charged here — just show the customer exactly what
   // will happen and when the draw closes.
@@ -237,7 +240,9 @@ export default function RiskBuyScreen() {
     if (cart.length === 0) { Alert.alert('', t('cartEmptyWarn') as string); return; }
     if (!session) { setAccountOpen(true); return; }
     setBuyMsg(null);
+    setQuota(null);
     setReviewOpen(true);
+    previewQuota(betDate, cart.map(c => c.num)).then(setQuota);
   };
 
   const showSaved = (purchase: Purchase, ticket: Ticket) => {
@@ -259,6 +264,7 @@ export default function RiskBuyScreen() {
       case 'duplicate_number': return t('betDup') as string;
       case 'invalid_line': case 'empty_cart': return t('betBad') as string;
       case 'too_many_lines': return t('errTooMany') as string;
+      case 'all_full': return t('errAllFull') as string;
       case 'not_signed_in': return t('errNotSignedIn') as string;
       default: return t('purchaseFailed') as string;
     }
@@ -277,8 +283,17 @@ export default function RiskBuyScreen() {
       let saved: Purchase | null = null;
       try { saved = await fetchPurchase(id); } catch { /* fall back to the server's own ticket data below */ }
       if (saved?.ticketNo !== ticket.ticketNo) {
-        // The server confirmed the ticket; the read-back just isn't available.
-        // Show what the server issued (its ticket no./code) with the cart we sent.
+        // The server confirmed the bill but we can't read it back. With a quota some
+        // numbers may have been cut or full, so the cart is not proof of what was
+        // bought: only rebuild it when the server's totals match the cart exactly.
+        if (ticket.total !== cartTotal || ticket.lineCount !== cart.length) {
+          setCart([]);
+          setReviewOpen(false);
+          Alert.alert('', t('billSavedNoDetail') as string);
+          setBuying(false);
+          refreshStats().catch(() => {});
+          return;
+        }
         saved = {
           id, billNo: ticket.ticketNo, refNo: '—', channel: t('demoChannel') as string,
           drawDate: ticket.drawDate, createdAt: ticket.createdAt, ticketNo: ticket.ticketNo,
@@ -552,12 +567,21 @@ export default function RiskBuyScreen() {
             <View style={s.revRow}><Text style={s.revLabel}>{t('reviewCount') as string}</Text>
               <Text style={s.revValue}>{cart.length} {t('numbersUnit') as string}</Text></View>
             <ScrollView style={s.revList} nestedScrollEnabled>
-              {cart.slice(0, 50).map(c => (
-                <View key={c.num} style={s.revLine}>
-                  <Text style={s.revNum}>{c.num}</Text>
-                  <Text style={s.revAmt}>{c.amount.toLocaleString()} ₭</Text>
-                </View>
-              ))}
+              {cart.slice(0, 50).map(c => {
+                const left = quota ? quota[c.num] : undefined;
+                const full = left !== undefined && left <= 0;
+                const part = left !== undefined && left > 0 && left < c.amount;
+                return (
+                  <View key={c.num} style={s.revLine}>
+                    <Text style={[s.revNum, full && s.revFull]}>{c.num}</Text>
+                    <Text style={[s.revAmt, full && s.revFull, part && s.revPart]}>
+                      {full ? t('numFull') as string
+                        : part ? `${left!.toLocaleString()} / ${c.amount.toLocaleString()} ₭`
+                        : `${c.amount.toLocaleString()} ₭`}
+                    </Text>
+                  </View>
+                );
+              })}
               {cart.length > 50 && (
                 <Text style={[s.muted, { textAlign: 'center', marginTop: 4 }]}>
                   {(t('moreNumbers') as string).replace('{n}', String(cart.length - 50))}
@@ -565,14 +589,19 @@ export default function RiskBuyScreen() {
               )}
             </ScrollView>
             <View style={s.revRow}><Text style={s.revTotalLabel}>{t('reviewTotal') as string}</Text>
-              <Text style={s.revTotal}>{cartTotal.toLocaleString()} ₭</Text></View>
+              <Text style={s.revTotal}>{estTotal.toLocaleString()} ₭</Text></View>
+            {estTotal !== cartTotal && (
+              <Text style={s.revPartNote}>{(t('reviewAskedFor') as string).replace('{v}', cartTotal.toLocaleString())}</Text>
+            )}
             <View style={s.revRow}><Text style={s.revLabel}>{t('reviewBalanceNow') as string}</Text>
               <Text style={s.revValue}>{(stats?.balance ?? 0).toLocaleString()} ₭</Text></View>
             <View style={s.revRow}><Text style={s.revLabel}>{t('reviewBalanceAfter') as string}</Text>
-              <Text style={[s.revValue, (stats?.balance ?? 0) < cartTotal && { color: '#e57373' }]}>
-                {((stats?.balance ?? 0) - cartTotal).toLocaleString()} ₭
+              <Text style={[s.revValue, (stats?.balance ?? 0) < estTotal && { color: '#e57373' }]}>
+                {((stats?.balance ?? 0) - estTotal).toLocaleString()} ₭
               </Text></View>
 
+            {quota && <Text style={s.revWarn}>ℹ️ {t('reviewQuotaNote') as string}</Text>}
+            {quota && estTotal === 0 && <Text style={s.revErr}>{t('errAllFull') as string}</Text>}
             <Text style={s.revWarn}>⚠️ {t('reviewWarn') as string}</Text>
             {buyMsg && <Text style={s.revErr}>{buyMsg}</Text>}
 
@@ -582,8 +611,8 @@ export default function RiskBuyScreen() {
               </TouchableOpacity>
               <TouchableOpacity
                 style={[s.confirmPurchaseBtn, { flex: 1.4, marginTop: 4 },
-                  (buying || !roundOpen || (stats?.balance ?? 0) < cartTotal) && s.btnDisabled]}
-                disabled={buying || !roundOpen || (stats?.balance ?? 0) < cartTotal} onPress={payNow}>
+                  (buying || !roundOpen || estTotal === 0 || (stats?.balance ?? 0) < estTotal) && s.btnDisabled]}
+                disabled={buying || !roundOpen || estTotal === 0 || (stats?.balance ?? 0) < estTotal} onPress={payNow}>
                 {buying
                   ? <ActivityIndicator color="#fff" size="small" />
                   : <Text style={s.primaryBtnTxt}>{t('payNow') as string}</Text>}
@@ -692,6 +721,9 @@ const s = StyleSheet.create({
   revAmt: { color: C.muted, fontSize: 13 },
   revTotalLabel: { color: C.text, fontSize: 15, fontWeight: 'bold' },
   revTotal: { color: C.gold, fontSize: 17, fontWeight: 'bold' },
+  revFull: { color: '#c0392b' },
+  revPart: { color: '#b57a00', fontWeight: 'bold' },
+  revPartNote: { color: '#b57a00', fontSize: 11, textAlign: 'right', marginTop: -2, marginBottom: 6 },
   revWarn: { color: C.muted, fontSize: 11, lineHeight: 16, marginTop: 8, marginBottom: 8 },
   revErr: { color: '#c0392b', fontSize: 12, lineHeight: 17, marginBottom: 8, backgroundColor: '#FCEAEA', padding: 10, borderRadius: 8 },
 });

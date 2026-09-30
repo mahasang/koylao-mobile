@@ -3,13 +3,17 @@ import { fmtDate } from '../utils/lottery';
 import type { Lang } from './lottery';
 
 export type LineStatus = 'pending' | 'win' | 'lose';
-export interface PurchaseLine { num: string; amount: number; status: LineStatus; hit?: number | null; pay?: number; }
+// amount = what was really bought; requested = what the customer asked for, set only when a quota cut it short.
+export interface PurchaseLine { num: string; amount: number; requested?: number | null; status: LineStatus; hit?: number | null; pay?: number; }
+export interface FullLine { num: string; requested: number; }
 export interface Purchase {
   id: string; billNo: string; refNo: string; channel: string;
   drawDate: string; createdAt: string; lines: PurchaseLine[];
   // Issued by the server when the ticket is saved; absent on tickets that
   // predate the ticket system (those still have billNo/refNo).
   ticketNo?: string | null; verifyCode?: string | null;
+  // Numbers that were full (sold out for this draw) and so were not bought at all.
+  fullLines?: FullLine[];
 }
 // What create_purchase() returns once the ticket is really saved.
 export interface Ticket {
@@ -41,11 +45,11 @@ export function newPurchaseId(): string {
 export type PurchaseErrorCode =
   | 'not_signed_in' | 'insufficient_balance' | 'round_closed' | 'invalid_draw_date'
   | 'buying_disabled' | 'duplicate_number' | 'invalid_line' | 'empty_cart'
-  | 'too_many_lines' | 'unknown';
+  | 'too_many_lines' | 'all_full' | 'unknown';
 
 const KNOWN_ERRORS: PurchaseErrorCode[] = [
   'not_signed_in', 'insufficient_balance', 'round_closed', 'invalid_draw_date',
-  'buying_disabled', 'duplicate_number', 'invalid_line', 'empty_cart', 'too_many_lines',
+  'buying_disabled', 'duplicate_number', 'invalid_line', 'empty_cart', 'too_many_lines', 'all_full',
 ];
 
 // 'unknown' means we can't tell whether the server saved the ticket (e.g.
@@ -90,14 +94,16 @@ function mapPurchase(p: any): Purchase {
     createdAt: p.created_at,
     ticketNo: p.ticket_no ?? null,
     verifyCode: p.verify_code ?? null,
+    fullLines: Array.isArray(p.full_lines) ? p.full_lines.map((f: any) => ({ num: f.num, requested: Number(f.requested) })) : [],
     lines: (p.purchase_lines ?? []).map((l: any) => ({
-      num: l.num, amount: l.amount, status: l.status, hit: l.hit, pay: l.pay == null ? l.pay : Number(l.pay),
+      num: l.num, amount: l.amount, requested: l.requested_amount ?? null, status: l.status, hit: l.hit,
+      pay: l.pay == null ? l.pay : Number(l.pay),
     })),
   };
 }
 
 const PURCHASE_COLS =
-  'id, bill_no, ref_no, channel, draw_date, created_at, ticket_no, verify_code, purchase_lines(num, amount, status, hit, pay)';
+  'id, bill_no, ref_no, channel, draw_date, created_at, ticket_no, verify_code, full_lines, purchase_lines(num, amount, requested_amount, status, hit, pay)';
 
 // Reads one purchase back from the database. Returns null only when the
 // query succeeded and there is no such purchase; throws when it can't tell.
@@ -105,6 +111,15 @@ export async function fetchPurchase(id: string): Promise<Purchase | null> {
   const { data, error } = await supabase.from('purchases').select(PURCHASE_COLS).eq('id', id).maybeSingle();
   if (error) throw error;
   return data ? mapPurchase(data) : null;
+}
+
+// How much of each number is still on sale in a draw. Only an estimate: another
+// customer can take the rest before this one pays, and the bill shows what was
+// really bought. Returns null if the server can't be asked.
+export async function previewQuota(drawDate: string, nums: string[]): Promise<Record<string, number> | null> {
+  const { data, error } = await supabase.rpc('get_quota_remaining', { p_draw_date: drawDate, p_nums: nums });
+  if (error || !Array.isArray(data)) return null;
+  return Object.fromEntries((data as { num: string; remaining: number }[]).map(r => [r.num, Number(r.remaining)]));
 }
 
 // Loads the signed-in user's purchases (with their lines) from Supabase.

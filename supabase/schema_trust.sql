@@ -15,6 +15,9 @@
 --      append-only ledger row for every movement. A direct UPDATE of
 --      profiles.balance (SQL editor, dashboard bug, anything) is refused.
 --   5. Deposit / withdraw requests with admin approval, all on the ledger.
+--   7. Per-number quotas ("เลขเต็ม"): each number can only be sold up to a
+--      quota per draw across ALL customers; a bill records what was really
+--      bought, what was asked for, and which numbers were full.
 --   6. In-app notifications written by the server itself (ticket saved,
 --      draw settled, result announced, deposit/withdraw decided, someone
 --      used your referral code).
@@ -439,6 +442,110 @@ create unique index if not exists purchases_ticket_no_key on public.purchases (t
 
 create sequence if not exists public.ticket_seq;
 
+-- ---- Number quotas -------------------------------------------------
+-- A number can only be sold up to a quota per draw, across all customers.
+-- Defaults come from the number of digits; a single number in a single draw
+-- can be overridden. THE DEFAULTS BELOW ARE PLACEHOLDERS: they cap how much
+-- the house could owe on one number, so set them deliberately
+-- (admin_set_quota_default / admin_set_number_quota).
+create table if not exists public.number_quota_defaults (
+  digits integer primary key check (digits between 1 and 6),
+  quota  bigint not null check (quota > 0)
+);
+insert into public.number_quota_defaults (digits, quota) values
+  (6, 100000), (5, 5000000), (4, 50000000), (3, 200000000), (2, 1000000000), (1, 2000000000)
+on conflict (digits) do nothing;
+
+create table if not exists public.number_quota_overrides (
+  draw_date date not null,
+  num       text not null check (num ~ '^[0-9]{1,6}$'),
+  quota     bigint not null check (quota >= 0),
+  primary key (draw_date, num)
+);
+
+create table if not exists public.number_sales (
+  draw_date date not null,
+  num       text not null,
+  sold      bigint not null default 0 check (sold >= 0),
+  primary key (draw_date, num)
+);
+
+alter table public.number_quota_defaults enable row level security;
+alter table public.number_quota_overrides enable row level security;
+alter table public.number_sales enable row level security;
+
+drop policy if exists "quota_defaults_select_admin" on public.number_quota_defaults;
+create policy "quota_defaults_select_admin" on public.number_quota_defaults for select using (public.is_admin());
+drop policy if exists "quota_overrides_select_admin" on public.number_quota_overrides;
+create policy "quota_overrides_select_admin" on public.number_quota_overrides for select using (public.is_admin());
+drop policy if exists "number_sales_select_admin" on public.number_sales;
+create policy "number_sales_select_admin" on public.number_sales for select using (public.is_admin());
+
+alter table public.purchase_lines add column if not exists requested_amount integer;   -- only set when less was bought than asked for
+alter table public.purchases add column if not exists full_lines jsonb not null default '[]'::jsonb;  -- [{num, requested}] numbers that were full
+
+create or replace function public.quota_for(p_draw_date date, p_num text)
+returns bigint
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select coalesce(
+    (select quota from public.number_quota_overrides where draw_date = p_draw_date and num = p_num),
+    (select quota from public.number_quota_defaults where digits = length(p_num)),
+    0);
+$$;
+revoke all on function public.quota_for(date, text) from public, anon, authenticated;
+
+-- What is still available for these numbers in this draw (an estimate: it can
+-- change before the customer pays, the bill shows what was really bought).
+create or replace function public.get_quota_remaining(p_draw_date date, p_nums text[])
+returns table (num text, remaining bigint)
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select n, greatest(public.quota_for(p_draw_date, n) - coalesce(s.sold, 0), 0)::bigint
+  from unnest(p_nums[1:1000]) as n
+  left join public.number_sales s on s.draw_date = p_draw_date and s.num = n
+  where n ~ '^[0-9]{1,6}$';
+$$;
+grant execute on function public.get_quota_remaining(date, text[]) to anon, authenticated;
+
+create or replace function public.admin_set_quota_default(p_digits integer, p_quota bigint)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if not public.can_edit_draws() then raise exception 'not authorized'; end if;
+  if p_digits not between 1 and 6 or p_quota is null or p_quota <= 0 then raise exception 'invalid_amount'; end if;
+  insert into public.number_quota_defaults (digits, quota) values (p_digits, p_quota)
+  on conflict (digits) do update set quota = excluded.quota;
+  perform public.log_audit('set_quota_default', 'number_quota_defaults', p_digits::text, jsonb_build_object('quota', p_quota));
+end;
+$$;
+revoke all on function public.admin_set_quota_default(integer, bigint) from public, anon;
+
+create or replace function public.admin_set_number_quota(p_draw_date date, p_num text, p_quota bigint)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if not public.can_edit_draws() then raise exception 'not authorized'; end if;
+  if p_num is null or p_num !~ '^[0-9]{1,6}$' or p_quota is null or p_quota < 0 then raise exception 'invalid_amount'; end if;
+  insert into public.number_quota_overrides (draw_date, num, quota) values (p_draw_date, p_num, p_quota)
+  on conflict (draw_date, num) do update set quota = excluded.quota;
+  perform public.log_audit('set_number_quota', 'number_quota_overrides', p_draw_date::text || ':' || p_num, jsonb_build_object('quota', p_quota));
+end;
+$$;
+revoke all on function public.admin_set_number_quota(date, text, bigint) from public, anon;
+
 create or replace function public.lines_digest(p_purchase_id text)
 returns text
 language sql
@@ -515,6 +622,12 @@ declare
   v_digest    text;
   v_tx_id     bigint;
   v_owner     uuid;
+  r           record;
+  v_sold      bigint;
+  v_take      bigint;
+  v_accepted  jsonb := '[]'::jsonb;
+  v_full      jsonb := '[]'::jsonb;
+  v_acc_count integer := 0;
 begin
   if v_uid is null then
     raise exception 'not_signed_in';
@@ -578,15 +691,39 @@ begin
     raise exception 'duplicate_number';
   end if;
 
+  -- Quota: sell each number only up to what is left in this draw. Rows are
+  -- locked in number order so two customers can never oversell a number (or
+  -- deadlock). Numbers with nothing left are recorded as "full", not bought.
+  v_total := 0;
+  for r in
+    select x.num, x.amount from jsonb_to_recordset(p_lines) as x(num text, amount bigint) order by x.num
+  loop
+    insert into public.number_sales (draw_date, num) values (p_draw_date, r.num) on conflict do nothing;
+    select sold into v_sold from public.number_sales where draw_date = p_draw_date and num = r.num for update;
+    v_take := least(r.amount, greatest(public.quota_for(p_draw_date, r.num) - v_sold, 0));
+    if v_take <= 0 then
+      v_full := v_full || jsonb_build_object('num', r.num, 'requested', r.amount);
+    else
+      update public.number_sales set sold = sold + v_take where draw_date = p_draw_date and num = r.num;
+      v_accepted := v_accepted || jsonb_build_object('num', r.num, 'amount', v_take, 'requested', r.amount);
+      v_total := v_total + v_take;
+      v_acc_count := v_acc_count + 1;
+    end if;
+  end loop;
+
+  if v_acc_count = 0 then
+    raise exception 'all_full';
+  end if;
+
   v_seq := nextval('public.ticket_seq');
   v_ticket_no := 'KL' || to_char(v_created at time zone 'Asia/Vientiane', 'YYMMDD') || '-' || lpad(v_seq::text, 6, '0');
 
-  insert into public.purchases (id, user_id, bill_no, ref_no, channel, draw_date, created_at, ticket_no)
-  values (p_id, v_uid, v_ticket_no, 'pending', coalesce(nullif(trim(p_channel), ''), 'app'), p_draw_date, v_created, v_ticket_no);
+  insert into public.purchases (id, user_id, bill_no, ref_no, channel, draw_date, created_at, ticket_no, full_lines)
+  values (p_id, v_uid, v_ticket_no, 'pending', coalesce(nullif(trim(p_channel), ''), 'app'), p_draw_date, v_created, v_ticket_no, v_full);
 
-  insert into public.purchase_lines (purchase_id, num, amount, status)
-  select p_id, x.num, x.amount::integer, 'pending'
-  from jsonb_to_recordset(p_lines) as x(num text, amount bigint);
+  insert into public.purchase_lines (purchase_id, num, amount, requested_amount, status)
+  select p_id, x.num, x.amount::integer, case when x.requested > x.amount then x.requested::integer end, 'pending'
+  from jsonb_to_recordset(v_accepted) as x(num text, amount bigint, requested bigint);
 
   -- Raises insufficient_balance (rolling everything above back) if the wallet can't cover it.
   v_tx_id := public.wallet_apply(v_uid, -v_total, 'purchase', 'purchase', p_id, 'Bill ' || v_ticket_no);
@@ -599,7 +736,8 @@ begin
   where id = p_id;
 
   perform public.notify(v_uid, 'purchase_ok', jsonb_build_object(
-    'ticket_no', v_ticket_no, 'draw_date', p_draw_date, 'total', v_total, 'line_count', v_count));
+    'ticket_no', v_ticket_no, 'draw_date', p_draw_date, 'total', v_total, 'line_count', v_acc_count,
+    'full_count', jsonb_array_length(v_full)));
 
   return public.purchase_json(p_id, false);
 end;
