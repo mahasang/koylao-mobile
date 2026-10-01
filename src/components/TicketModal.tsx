@@ -36,6 +36,19 @@ function animalIcon(num: string): string {
   return key ? ANIMAL_EMOJI[key] : '🐾';
 }
 
+// A number with the trailing digits that matched the result picked out in red, so a
+// 6-digit number that won on its last 2 digits reads at a glance.
+function HitNumber({ num, hit, style }: { num: string; hit?: number | null; style: any }) {
+  const n = hit && hit > 0 ? Math.min(hit, num.length) : 0;
+  if (n === 0) return <Text style={style}>{num}</Text>;
+  return (
+    <Text style={style}>
+      {num.slice(0, num.length - n)}
+      <Text style={s.hitDigits}>{num.slice(num.length - n)}</Text>
+    </Text>
+  );
+}
+
 // Shows a bill exactly as the server stored it. Callers must only pass a purchase
 // they have read back from the database — never one built locally.
 export default function TicketModal({ purchase, onClose, justSaved, closesAt, balanceAfter, onRepeat }: Props) {
@@ -105,7 +118,7 @@ export default function TicketModal({ purchase, onClose, justSaved, closesAt, ba
       <View key={key} style={s.cellWrap}>
         <View style={s.cellTop}>
           <View style={s.numBox}>
-            <Text style={[s.num, won && s.numWin, l.status === 'lose' && s.numLose]}>{l.num}</Text>
+            <HitNumber num={l.num} hit={won ? l.hit : null} style={[s.num, won && s.numWin, l.status === 'lose' && s.numLose]} />
             <Text style={s.icon}>{animalIcon(l.num)}</Text>
           </View>
           <View style={s.amtBox}>
@@ -203,7 +216,7 @@ export default function TicketModal({ purchase, onClose, justSaved, closesAt, ba
                     {[...wins].sort((x, y) => (y.pay ?? 0) - (x.pay ?? 0)).slice(0, MAX_WIN_ROWS).map(w => (
                       <View key={w.num} style={[s.winRow, w.hit === 6 && s.winRowJackpot]}>
                         <View style={{ flex: 1 }}>
-                          <Text style={s.winRowNum}>{w.num} {animalIcon(w.num)}</Text>
+                          <Text style={s.winRowNum}><HitNumber num={w.num} hit={w.hit} style={s.winRowNumTxt} /> {animalIcon(w.num)}</Text>
                           <Text style={s.winRowKind}>{prizeName(w.hit)}</Text>
                         </View>
                         <View style={{ alignItems: 'flex-end' }}>
@@ -325,7 +338,9 @@ const s = StyleSheet.create({
   winRow: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#ffffff', borderRadius: 8,
     paddingHorizontal: 10, paddingVertical: 6, marginBottom: 6, borderWidth: 1, borderColor: '#cfe8d5' },
   winRowJackpot: { backgroundColor: '#fff3cd', borderColor: '#e8a020' },
-  winRowNum: { color: '#1b5e20', fontFamily: 'Courier New', fontSize: 17, fontWeight: 'bold', letterSpacing: 0.5 },
+  winRowNum: { fontSize: 17 },
+  winRowNumTxt: { color: C.text, fontFamily: 'Courier New', fontSize: 17, fontWeight: 'bold', letterSpacing: 0.5 },
+  hitDigits: { color: '#d32f2f', backgroundColor: '#ffe3e3', fontWeight: 'bold' },
   winRowKind: { color: C.muted, fontSize: 12, marginTop: 1 },
   winRowBought: { color: C.text, fontSize: 13 },
   winRowPay: { color: '#1b7a36', fontSize: 17, fontWeight: 'bold' },
@@ -360,12 +375,12 @@ const s = StyleSheet.create({
   numBox: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   num: { color: C.text, fontFamily: 'Courier New', fontSize: 17, letterSpacing: 0.5 },
   numFull: { color: '#c0392b' },
-  numWin: { color: '#2e9e4f', fontWeight: 'bold' },
-  numLose: { color: '#c0392b' },
+  numWin: { color: C.text, fontWeight: 'bold' },
+  numLose: { color: C.muted },
   icon: { fontSize: 18 },
   amtBox: { alignItems: 'flex-end', flexShrink: 0 },
   amt: { color: C.text, fontSize: 17 },
-  amtLose: { color: '#c0392b' },
+  amtLose: { color: C.muted },
   fullTxt: { color: '#c0392b', fontSize: 15 },
   struck: { color: C.muted, fontSize: 13, textDecorationLine: 'line-through' },
   more: { textAlign: 'center', color: C.muted, fontSize: 12, marginTop: 6 },
