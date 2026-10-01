@@ -7,7 +7,7 @@ import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { getDraws, fetchLatestDraws, animalName, animalEmoji } from '../data/lottery';
 import type { Draw } from '../data/lottery';
 import { fmtDate } from '../utils/lottery';
-import { fetchRounds, isRoundOpen, msUntilClose, fmtCloseTime } from '../data/rounds';
+import { fetchRounds, isRoundOpen, msUntilClose, fmtCloseTime, nextSaleDate } from '../data/rounds';
 import type { Round } from '../data/rounds';
 import { useI18n } from '../data/i18n';
 import { useAuth } from '../data/auth';
@@ -81,9 +81,15 @@ export default function HomeScreen() {
             <Text style={s.muted}>⚠️ {t('roundsLoadFail') as string} — {t('retryBtn') as string}</Text>
           </TouchableOpacity>
         ) : (
-          <Text style={s.muted}>{rounds ? t('homeNoRound') as string : '…'}</Text>
+          <>
+            <Text style={s.muted}>{rounds ? t('homeNoRound') as string : '…'}</Text>
+            {rounds && (
+              <Text style={[s.muted, { marginTop: 4 }]}>
+                {(t('nextRoundOpens') as string).replace('{date}', fmtDate(nextSaleDate(), lang, { weekday: 'long', day: 'numeric', month: 'long' }))}
+              </Text>
+            )}
+          </>
         )}
-        <Text style={[s.muted, { marginTop: 8 }]}>{t('drawTime') as string}</Text>
       </View>
 
       {/* latest result */}
@@ -116,7 +122,6 @@ export default function HomeScreen() {
         {[
           { icon: '👛', label: t('homeWalletTile') as string, sub: session ? `${(stats?.balance ?? 0).toLocaleString()} ₭` : undefined, screen: 'Wallet' },
           { icon: '📜', label: t('homeTicketsTile') as string, screen: 'RiskHistory' },
-          { icon: '🔍', label: t('homeVerifyTile') as string, screen: 'VerifyTicket' },
           { icon: '🛟', label: t('homeHelpTile') as string, root: 'Help' },
         ].map(x => (
           <TouchableOpacity key={x.label} style={s.tile}

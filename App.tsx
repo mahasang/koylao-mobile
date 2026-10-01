@@ -3,6 +3,7 @@ import { StatusBar, Text } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { NavigationContainer, useNavigationContainerRef } from '@react-navigation/native';
 import * as Notifications from 'expo-notifications';
+import * as SplashScreen from 'expo-splash-screen';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { I18nProvider, useI18n } from './src/data/i18n';
@@ -17,11 +18,15 @@ import RiskBuyScreen     from './src/screens/RiskBuyScreen';
 import RiskResultsScreen from './src/screens/RiskResultsScreen';
 import RiskHistoryScreen from './src/screens/RiskHistoryScreen';
 import WalletScreen      from './src/screens/WalletScreen';
-import VerifyTicketScreen from './src/screens/VerifyTicketScreen';
 import NotificationsScreen from './src/screens/NotificationsScreen';
 import HelpScreen from './src/screens/HelpScreen';
 import AppHeader from './src/components/AppHeader';
+import { loadCachedDraws } from './src/data/lottery';
 import { C } from './src/theme';
+
+// Keep the splash up until the cached draw results are loaded, so the first
+// frame never flashes the older results bundled with the app.
+SplashScreen.preventAutoHideAsync().catch(() => {});
 
 const Tab = createBottomTabNavigator();
 const RiskStackNav = createNativeStackNavigator();
@@ -36,7 +41,6 @@ function RiskStack() {
       <RiskStackNav.Screen name="RiskResults" component={RiskResultsScreen} options={{ title: t('resultsHistoryTitle') as string }} />
       <RiskStackNav.Screen name="RiskHistory" component={RiskHistoryScreen} options={{ title: t('purchaseHistory') as string }} />
       <RiskStackNav.Screen name="Wallet" component={WalletScreen} options={{ title: t('walletTitle') as string }} />
-      <RiskStackNav.Screen name="VerifyTicket" component={VerifyTicketScreen} options={{ title: t('verifyTitle') as string }} />
     </RiskStackNav.Navigator>
   );
 }
@@ -92,6 +96,14 @@ function Root() {
 
 export default function App() {
   const navRef = useNavigationContainerRef<any>();
+  const [ready, setReady] = React.useState(false);
+
+  React.useEffect(() => {
+    loadCachedDraws().finally(() => {
+      setReady(true);
+      SplashScreen.hide();
+    });
+  }, []);
 
   // Tapping a phone notification opens the screen it is about.
   React.useEffect(() => {
@@ -103,6 +115,8 @@ export default function App() {
     });
     return () => sub.remove();
   }, [navRef]);
+
+  if (!ready) return null;
 
   return (
     <SafeAreaProvider>

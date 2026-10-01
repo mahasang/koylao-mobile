@@ -23,6 +23,18 @@ export async function fetchRounds(): Promise<Round[]> {
   return rows.map(r => ({ drawDate: r.draw_date, closesAt: r.closes_at }));
 }
 
+// The next weekday after today (Laos date). Bets are same-day only, so when no
+// round is open this is the day the next round opens for sale, at 00:00 Laos.
+export function nextSaleDate(): string {
+  const laos = new Date(serverNow() + 7 * 3600 * 1000);
+  for (let i = 1; i <= 7; i++) {
+    const d = new Date(Date.UTC(laos.getUTCFullYear(), laos.getUTCMonth(), laos.getUTCDate() + i));
+    const dow = d.getUTCDay();
+    if (dow >= 1 && dow <= 5) return d.toISOString().slice(0, 10);
+  }
+  return '';
+}
+
 export function isRoundOpen(r: Round): boolean {
   return new Date(r.closesAt).getTime() > serverNow();
 }

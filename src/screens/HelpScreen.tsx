@@ -18,7 +18,6 @@ export default function HelpScreen() {
         {[
           { icon: '👛', label: t('menuWalletT') as string, screen: 'Wallet' },
           { icon: '📜', label: t('purchaseHistory') as string, screen: 'RiskHistory' },
-          { icon: '🔍', label: t('menuVerifyT') as string, screen: 'VerifyTicket' },
         ].map(x => (
           <TouchableOpacity key={x.screen} style={s.tile} onPress={() => go(x.screen)}>
             <Text style={s.tileIcon}>{x.icon}</Text>

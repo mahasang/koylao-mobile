@@ -146,9 +146,10 @@ end;
 $$;
 revoke all on function public.ensure_round(date) from public, anon, authenticated;
 
--- What the buy screen shows: the next ~7 draw days with their exact
--- closing time, plus the server's clock so the app can correct for a
--- wrong phone clock.
+-- What the buy screen shows: today's draw only (bets are same-day: you
+-- cannot buy ahead for a later draw day), with its exact closing time, plus
+-- the server's clock so the app can correct for a wrong phone clock.
+-- On weekends there is no draw, so nothing is returned.
 create or replace function public.list_rounds()
 returns table (draw_date date, closes_at timestamptz, is_open boolean, server_now timestamptz)
 language plpgsql
@@ -157,19 +158,15 @@ set search_path = public
 as $$
 declare
   v_today date := (now() at time zone 'Asia/Vientiane')::date;
-  d date;
 begin
-  for d in
-    select gs::date from generate_series(v_today, v_today + 10, interval '1 day') gs
-    where extract(isodow from gs) in (1, 2, 3, 4, 5)
-  loop
-    perform public.ensure_round(d);
-  end loop;
+  if extract(isodow from v_today) in (1, 2, 3, 4, 5) then
+    perform public.ensure_round(v_today);
+  end if;
 
   return query
     select r.draw_date, r.closes_at, r.closes_at > now(), now()
     from public.draw_rounds r
-    where r.draw_date between v_today and v_today + 10
+    where r.draw_date = v_today
     order by r.draw_date;
 end;
 $$;
@@ -659,8 +656,8 @@ begin
     raise exception 'buying_disabled';
   end if;
 
-  -- Round must exist, be a real draw day within the booking window, and still be open.
-  if p_draw_date is null or p_draw_date < v_today or p_draw_date > v_today + 14 then
+  -- Bets are same-day only: the round must be today's draw (a real draw day) and still open.
+  if p_draw_date is null or p_draw_date <> v_today then
     raise exception 'invalid_draw_date';
   end if;
   perform public.ensure_round(p_draw_date);

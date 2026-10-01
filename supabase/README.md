@@ -47,8 +47,8 @@ Run once, in order, after creating the Supabase project:
 What it guarantees, and where:
 
 - **Closing time** — `draw_rounds.closes_at` (default 20:00 Laos time on the draw
-  day). `create_purchase()` rejects a closed, past, weekend or >14-day-out round
-  using the server clock; the app just displays `list_rounds()`. Move one
+  day). `create_purchase()` only accepts today's round (no buying ahead for a later
+  draw day) and rejects it once closed or on a weekend, using the server clock; the app just displays `list_rounds()`. Move one
   round's close with `admin_set_round_close(date, timestamptz)` (draws admin,
   audited).
 - **Tickets** — `create_purchase(p_id, p_draw_date, p_lines)` checks the round,

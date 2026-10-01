@@ -4,7 +4,7 @@ import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { getDraws, fetchLatestDraws, animalName, animalEmoji } from '../data/lottery';
 import type { Draw } from '../data/lottery';
 import { fmtDate } from '../utils/lottery';
-import { fetchRounds, isRoundOpen, msUntilClose, fmtCloseTime } from '../data/rounds';
+import { fetchRounds, isRoundOpen, msUntilClose, fmtCloseTime, nextSaleDate } from '../data/rounds';
 import type { Round } from '../data/rounds';
 import ResultMeta from '../components/ResultMeta';
 import { loadPurchases, overallPurchaseStatus, purchaseTotal, fmtDateTime } from '../data/purchases';
@@ -82,8 +82,14 @@ export default function RiskScreen() {
           <TouchableOpacity onPress={loadRounds}>
             <Text style={s.muted}>⚠️ {t('roundsLoadFail') as string} — {t('retryBtn') as string}</Text>
           </TouchableOpacity>
-        ) : rounds ? <Text style={s.muted}>{t('noOpenRound') as string}</Text> : null}
-        <Text style={s.muted}>{t('drawTime') as string}</Text>
+        ) : rounds ? (
+          <>
+            <Text style={s.muted}>{t('noOpenRound') as string}</Text>
+            <Text style={s.muted}>
+              {(t('nextRoundOpens') as string).replace('{date}', fmtDate(nextSaleDate(), lang, { weekday: 'long', day: 'numeric', month: 'long' }))}
+            </Text>
+          </>
+        ) : null}
       </View>
 
       {/* latest result */}
@@ -131,11 +137,7 @@ export default function RiskScreen() {
           <Text style={s.menuTitle}>{t('menuWalletT') as string}</Text>
           <Text style={s.menuDesc}>{t('menuWalletD') as string}</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={s.menuCard} onPress={() => nav.navigate('VerifyTicket')}>
-          <Text style={s.menuIcon}>🔍</Text>
-          <Text style={s.menuTitle}>{t('menuVerifyT') as string}</Text>
-          <Text style={s.menuDesc}>{t('menuVerifyD') as string}</Text>
-        </TouchableOpacity>
+        <View style={{ flex: 1 }} />
       </View>
 
       {/* recent bets — one card per purchase, no line-by-line details */}

@@ -1,3 +1,4 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import rawDraws from './draws.json';
 import { ANIMALS, ANIMAL_MAP, ANIMAL_EMOJI } from './animals';
 import { supabase } from '../lib/supabase';
@@ -23,10 +24,33 @@ export function getDraws(): Draw[] {
 
 export const DRAWS: Draw[] = SEED;
 
+const CACHE_KEY = 'koylao.draws.v1';
+
+// Overlays server results on the bundled seed, newest first.
+function mergeOverSeed(server: Draw[]): Draw[] {
+  const byDate: Record<string, Draw> = {};
+  SEED.forEach(d => { byDate[d.date] = d; });
+  server.forEach(d => { byDate[d.date] = d; });
+  return Object.values(byDate).sort((a, b) => b.date.localeCompare(a.date));
+}
+
+// Restores the results fetched on a previous run, so the first screen shows
+// the latest draw instead of the (older) bundled seed while the network
+// request is still in flight. Call once at startup, before rendering.
+export async function loadCachedDraws(): Promise<void> {
+  try {
+    const raw = await AsyncStorage.getItem(CACHE_KEY);
+    if (!raw) return;
+    const cached = JSON.parse(raw) as Draw[];
+    if (Array.isArray(cached)) _draws = mergeOverSeed(cached);
+  } catch {}
+}
+
 // Pulls the canonical results from Supabase's public.draws table (kept
 // current server-side by the fetch-draws Edge Function) and merges them
 // over the bundled seed, so the app always shows the same results to
-// every user regardless of when it was last built.
+// every user regardless of when it was last built. The server rows are
+// also cached on the device for the next launch.
 export async function fetchLatestDraws(): Promise<number> {
   const { data, error } = await supabase
     .from('draws')
@@ -35,16 +59,14 @@ export async function fetchLatestDraws(): Promise<number> {
     .limit(400);
   if (error) throw error;
 
-  const byDate: Record<string, Draw> = {};
-  SEED.forEach(d => { byDate[d.date] = d; });
-  (data ?? []).forEach(row => { byDate[row.draw_date] = {
-      date: row.draw_date, num: row.num, status: row.status, source: row.source,
-      updatedAt: row.updated_at, confirmedAt: row.confirmed_at,
-    };
-  });
+  const server: Draw[] = (data ?? []).map(row => ({
+    date: row.draw_date, num: row.num, status: row.status, source: row.source,
+    updatedAt: row.updated_at, confirmedAt: row.confirmed_at,
+  }));
 
   const before = _draws.length;
-  _draws = Object.values(byDate).sort((a, b) => b.date.localeCompare(a.date));
+  _draws = mergeOverSeed(server);
+  AsyncStorage.setItem(CACHE_KEY, JSON.stringify(server)).catch(() => {});
   return Math.max(0, _draws.length - before);
 }
 
